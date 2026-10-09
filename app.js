@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var APP_VERSION = '1.0.0';
+  var APP_VERSION = '1.1.0';
 
   var CLUBS = ['ドライバー', '3W', '5W', 'UT', '5I', '6I', '7I', '8I', '9I', 'PW', 'AW', 'SW', 'パター', 'その他'];
   var COLORS = [
@@ -103,6 +103,8 @@
   function toast(msg, ms) {
     var el = $('toast');
     el.textContent = msg;
+    // カメラ画面では録画ボタンに重ならないよう、上側に表示する
+    el.classList.toggle('is-high', currentScreen === 'camera');
     el.hidden = false;
     clearTimeout(toastTimer);
     toastTimer = setTimeout(function () { el.hidden = true; }, ms || 2600);
@@ -140,7 +142,7 @@
   var currentScreen = 'home';
   function show(name) {
     currentScreen = name;
-    ['home', 'capture', 'list', 'analyze'].forEach(function (n) {
+    ['home', 'capture', 'camera', 'list', 'analyze'].forEach(function (n) {
       $('screen-' + n).classList.toggle('is-active', n === name);
     });
     if (name === 'home') refreshStorageInfo();
@@ -209,6 +211,249 @@
         fav: false,
         fps: 'auto',
         fileName: file.name || ''
+      }
+    });
+  }
+
+  /* ==========================================================
+     アプリ内カメラ
+     - getUserMedia で高解像度を指定してプレビューし、MediaRecorder で録画する。
+     - 録画が終わったら、そのまま動画分析画面へ渡す。
+     - 120/240fps のスロー撮影はブラウザからはできない（30fps または 60fps）。
+     ========================================================== */
+  var camVideo = $('cam-video');
+  var cam = {
+    stream: null, rec: null, chunks: [], recording: false,
+    fpsMode: loadCamFps(), facing: 'environment',
+    token: 0, t0: 0, timer: 0, wake: null, discard: false, failed: false
+  };
+  var CAM_MAX_SEC = 60;
+
+  // 前回選んだフレームレートを覚えておく（60fps非対応の端末で毎回試し直さないため）
+  function loadCamFps() {
+    try { return localStorage.getItem('guts-cam-fps') === '30' ? 30 : 60; } catch (e) { return 60; }
+  }
+  function saveCamFps() {
+    try { localStorage.setItem('guts-cam-fps', String(cam.fpsMode)); } catch (e) {}
+  }
+
+  function camSupported() {
+    return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder);
+  }
+  // アプリ内カメラが使えないときの、従来方式（iPhoneのカメラを起動）への切り替え
+  function useSystemCamera() { $('file-camera').click(); }
+
+  function openCamera() {
+    if (!camSupported()) {
+      ask('アプリ内カメラを使えません', 'このブラウザはアプリ内での録画に対応していません。\niPhoneのカメラを起動して撮影できますが、画質は下がります。', [
+        { label: 'iPhoneのカメラで撮影', value: 1, kind: 'primary' },
+        { label: 'キャンセル', value: 0 }
+      ]).then(function (ok) { if (ok) useSystemCamera(); });
+      return;
+    }
+    $('cam-dir').textContent = captureDir + 'から撮影';
+    $('cam-quality').textContent = '';
+    $('cam-fps').textContent = cam.fpsMode + 'fps';
+    setRecUI(false);
+    show('camera');
+    startStream();
+    if (navigator.wakeLock && navigator.wakeLock.request) {
+      navigator.wakeLock.request('screen').then(function (w) {
+        if (currentScreen === 'camera') cam.wake = w; else w.release();
+      }).catch(function () {});
+    }
+  }
+
+  function closeCamera() {
+    cam.token++;
+    if (cam.recording) { cam.discard = true; stopRec(); }
+    stopStream();
+    if (cam.wake) { try { cam.wake.release(); } catch (e) {} cam.wake = null; }
+    fillMsg($('cam-msg'), null);
+  }
+
+  function stopStream() {
+    if (cam.stream) {
+      cam.stream.getTracks().forEach(function (t) { t.onended = null; try { t.stop(); } catch (e) {} });
+      cam.stream = null;
+    }
+    try { camVideo.pause(); } catch (e) {}
+    camVideo.srcObject = null;
+  }
+
+  function camConstraints(w, h, frameRate) {
+    return {
+      audio: false,
+      video: { facingMode: { ideal: cam.facing }, width: { ideal: w }, height: { ideal: h }, frameRate: frameRate }
+    };
+  }
+  function isPermissionError(e) {
+    return !!e && (e.name === 'NotAllowedError' || e.name === 'SecurityError' || e.name === 'PermissionDeniedError');
+  }
+  // 60fps を優先して試し、端末が対応していなければ 30fps に下げる
+  function getCamStream(mode) {
+    var md = navigator.mediaDevices;
+    function std() { return md.getUserMedia(camConstraints(1920, 1080, { ideal: 30 })); }
+    if (mode !== 60) return std().then(function (s) { return { stream: s }; });
+    return md.getUserMedia(camConstraints(1920, 1080, { min: 50, ideal: 60 }))
+      .catch(function (e) {
+        if (isPermissionError(e)) throw e;
+        return md.getUserMedia(camConstraints(1280, 720, { min: 50, ideal: 60 }));
+      })
+      .then(function (s) { return { stream: s }; })
+      .catch(function (e) {
+        if (isPermissionError(e)) throw e;
+        return std().then(function (s) { return { stream: s, downgraded: true }; });
+      });
+  }
+
+  function startStream() {
+    var token = ++cam.token;
+    stopStream();
+    cam.failed = false;
+    $('cam-rec').disabled = true;
+    fillMsg($('cam-msg'), { spinner: true, text: 'カメラを起動中…' });
+    getCamStream(cam.fpsMode).then(function (res) {
+      if (token !== cam.token || currentScreen !== 'camera') {
+        res.stream.getTracks().forEach(function (t) { t.stop(); });
+        return;
+      }
+      cam.stream = res.stream;
+      if (res.downgraded) {
+        cam.fpsMode = 30;
+        saveCamFps();
+        $('cam-fps').textContent = '30fps';
+        toast('このカメラは60fpsで撮影できないため、30fpsにしました', 3600);
+      }
+      var track = res.stream.getVideoTracks()[0];
+      if (track) track.onended = function () {
+        if (token !== cam.token) return;
+        if (cam.recording) stopRec();
+        else { stopStream(); showCamError({ name: 'TrackEnded' }); }
+      };
+      camVideo.srcObject = res.stream;
+      var p = camVideo.play();
+      if (p && p.catch) p.catch(function () {});
+      fillMsg($('cam-msg'), null);
+      $('cam-rec').disabled = false;
+      updateCamInfo();
+    }).catch(function (err) {
+      if (token !== cam.token) return;
+      showCamError(err);
+    });
+  }
+
+  function updateCamInfo() {
+    if (!cam.stream) return;
+    var track = cam.stream.getVideoTracks()[0];
+    var st = track && track.getSettings ? track.getSettings() : {};
+    var w = camVideo.videoWidth || st.width, h = camVideo.videoHeight || st.height;
+    var parts = [];
+    if (w && h) parts.push(w + '×' + h);
+    if (st.frameRate) parts.push(Math.round(st.frameRate) + 'fps');
+    $('cam-quality').textContent = parts.join('・');
+  }
+  camVideo.addEventListener('loadedmetadata', updateCamInfo);
+  camVideo.addEventListener('resize', updateCamInfo);
+
+  function showCamError(err) {
+    var name = err && err.name || '';
+    var title = 'カメラを起動できませんでした', text;
+    if (isPermissionError(err)) {
+      title = 'カメラの使用が許可されていません';
+      text = 'iPhoneの「設定」でSafariの「カメラ」を「許可」または「確認」にしてから、もう一度お試しください。';
+    } else if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+      text = '使用できるカメラが見つかりませんでした。';
+    } else if (name === 'NotReadableError' || name === 'TrackStartError' || name === 'TrackEnded') {
+      text = 'ほかのアプリがカメラを使用中か、カメラが停止されました。';
+    } else {
+      text = '原因を特定できませんでした。' + (name ? '（' + name + '）' : '');
+    }
+    cam.failed = true;
+    $('cam-rec').disabled = true;
+    $('cam-quality').textContent = '';
+    fillMsg($('cam-msg'), {
+      title: title,
+      text: text,
+      buttons: [
+        { label: 'もう一度試す', primary: true, onClick: startStream },
+        { label: 'iPhoneのカメラで撮影（画質は下がります）', onClick: useSystemCamera }
+      ]
+    });
+  }
+
+  function pickRecMime() {
+    var list = ['video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'];
+    if (!MediaRecorder.isTypeSupported) return '';
+    for (var i = 0; i < list.length; i++) {
+      try { if (MediaRecorder.isTypeSupported(list[i])) return list[i]; } catch (e) {}
+    }
+    return '';
+  }
+
+  function setRecUI(on) {
+    $('screen-camera').classList.toggle('is-rec', on);
+    $('cam-timer').hidden = !on;
+    $('cam-rec').setAttribute('aria-label', on ? '録画停止' : '録画開始');
+    if (on) $('cam-time').textContent = '0:00';
+  }
+
+  function startRec() {
+    if (!cam.stream || cam.recording) return;
+    var mime = pickRecMime();
+    var opts = { videoBitsPerSecond: cam.fpsMode === 60 ? 20000000 : 14000000 };
+    if (mime) opts.mimeType = mime;
+    var rec;
+    try { rec = new MediaRecorder(cam.stream, opts); }
+    catch (e) {
+      try { rec = new MediaRecorder(cam.stream); }
+      catch (e2) { toast('録画を開始できませんでした'); return; }
+    }
+    cam.rec = rec;
+    cam.chunks = [];
+    cam.discard = false;
+    rec.ondataavailable = function (e) { if (e.data && e.data.size) cam.chunks.push(e.data); };
+    rec.onerror = function () { cam.discard = true; stopRec(); toast('録画中にエラーが発生しました'); };
+    rec.onstop = function () { finishRec(rec, mime); };
+    try { rec.start(1000); }
+    catch (e) { cam.rec = null; toast('録画を開始できませんでした'); return; }
+    cam.recording = true;
+    cam.t0 = performance.now();
+    setRecUI(true);
+    clearInterval(cam.timer);
+    cam.timer = setInterval(function () {
+      var sec = Math.floor((performance.now() - cam.t0) / 1000);
+      $('cam-time').textContent = Math.floor(sec / 60) + ':' + pad2(sec % 60);
+      if (sec >= CAM_MAX_SEC) { stopRec(); toast('録画は' + CAM_MAX_SEC + '秒までです。自動で停止しました', 3600); }
+    }, 250);
+  }
+
+  function stopRec() {
+    if (!cam.recording) return;
+    cam.recording = false;
+    clearInterval(cam.timer);
+    cam.timer = 0;
+    setRecUI(false);
+    try { if (cam.rec && cam.rec.state !== 'inactive') cam.rec.stop(); } catch (e) {}
+  }
+
+  function finishRec(rec, mime) {
+    var secs = (performance.now() - cam.t0) / 1000;
+    var type = (rec.mimeType || mime || 'video/mp4').split(';')[0] || 'video/mp4';
+    var blob = new Blob(cam.chunks, { type: type });
+    cam.chunks = [];
+    cam.rec = null;
+    if (cam.discard) { cam.discard = false; return; }
+    if (currentScreen !== 'camera') return;
+    if (!blob.size || secs < 0.5) { toast('録画が短すぎます。もう一度撮影してください'); return; }
+    closeCamera();
+    openVideo({
+      blob: blob,
+      kind: 'my',
+      from: 'capture',
+      meta: {
+        title: '', date: todayStr(), club: 'ドライバー', dir: captureDir, memo: '', fav: false,
+        fps: 'auto', fileName: 'camera-' + Date.now(), recDuration: secs
       }
     });
   }
@@ -393,8 +638,9 @@
     });
   }
 
-  function stageMsg(opts) {
-    var el = $('stage-msg');
+  function stageMsg(opts) { fillMsg($('stage-msg'), opts); }
+  // opts: {spinner, title, text, button, onButton, buttons:[{label, onClick, primary}]}
+  function fillMsg(el, opts) {
     el.textContent = '';
     if (!opts) { el.hidden = true; return; }
     if (opts.spinner) {
@@ -412,13 +658,47 @@
       s.textContent = opts.text;
       el.appendChild(s);
     }
-    if (opts.button) {
+    var list = opts.buttons ? opts.buttons.slice() : [];
+    if (opts.button) list.push({ label: opts.button, onClick: opts.onButton });
+    list.forEach(function (bt) {
       var btn = document.createElement('button');
-      btn.textContent = opts.button;
-      btn.addEventListener('click', opts.onButton);
+      btn.textContent = bt.label;
+      if (bt.primary) btn.className = 'is-primary';
+      btn.addEventListener('click', bt.onClick);
       el.appendChild(btn);
-    }
+    });
     el.hidden = false;
+  }
+
+  // 録画したての動画などで長さが取得できない場合に、末尾までシークして長さを確定させる
+  function ensureDuration(v) {
+    if (isFinite(v.duration) && v.duration > 0) return Promise.resolve();
+    return new Promise(function (resolve) {
+      var done = false;
+      var timer = setTimeout(finish, 4000);
+      function ok() { return isFinite(v.duration) && v.duration > 0; }
+      function finish() {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        v.removeEventListener('durationchange', check);
+        v.removeEventListener('seeked', check);
+        resolve();
+      }
+      function check() { if (ok()) finish(); }
+      v.addEventListener('durationchange', check);
+      v.addEventListener('seeked', check);
+      try { v.currentTime = 1e7; } catch (e) { finish(); }
+    });
+  }
+  function seekStart(v) {
+    return new Promise(function (resolve) {
+      if (v.currentTime === 0 && !v.seeking) { resolve(); return; }
+      var timer = setTimeout(fin, 3000);
+      function fin() { clearTimeout(timer); v.removeEventListener('seeked', fin); resolve(); }
+      v.addEventListener('seeked', fin);
+      try { v.currentTime = 0; } catch (e) { fin(); }
+    });
   }
 
   function openVideo(opts) {
@@ -476,7 +756,11 @@
     return waitMeta(video, 30000).then(function () {
       if (!cur || cur.token !== token) return;
       if (!video.videoWidth || !video.videoHeight) throw new Error('no-video-track');
-      cur.duration = isFinite(video.duration) ? video.duration : 0;
+      cur.priming = true;
+      return ensureDuration(video).then(function () { return seekStart(video); });
+    }).then(function () {
+      if (!cur || cur.token !== token) return;
+      cur.duration = isFinite(video.duration) && video.duration > 0 ? video.duration : (cur.meta.recDuration || 0);
       cur.meta.w = video.videoWidth;
       cur.meta.h = video.videoHeight;
       cur.meta.duration = cur.duration;
@@ -1505,9 +1789,28 @@
       $('cap-dir-hint').textContent = DIR_HINT[v];
     });
     $('btn-import').addEventListener('click', function () { $('file-import').click(); });
-    $('btn-camera').addEventListener('click', function () { $('file-camera').click(); });
+    $('btn-camera').addEventListener('click', openCamera);
     $('file-import').addEventListener('change', function () { handleFile(this, 'my', captureDir, 'capture'); });
-    $('file-camera').addEventListener('change', function () { handleFile(this, 'my', captureDir, 'capture'); });
+    $('file-camera').addEventListener('change', function () {
+      if (currentScreen === 'camera') closeCamera();
+      handleFile(this, 'my', captureDir, 'capture');
+    });
+
+    // アプリ内カメラ
+    $('cam-back').addEventListener('click', function () { closeCamera(); show('capture'); });
+    $('cam-rec').addEventListener('click', function () { if (cam.recording) stopRec(); else startRec(); });
+    $('cam-fps').addEventListener('click', function () {
+      if (cam.recording) return;
+      cam.fpsMode = cam.fpsMode === 60 ? 30 : 60;
+      saveCamFps();
+      this.textContent = cam.fpsMode + 'fps';
+      startStream();
+    });
+    $('cam-flip').addEventListener('click', function () {
+      if (cam.recording) return;
+      cam.facing = cam.facing === 'environment' ? 'user' : 'environment';
+      startStream();
+    });
 
     // 一覧
     $('f-club').addEventListener('change', function () { listState.club = this.value; renderList(); });
@@ -1627,6 +1930,15 @@
       if (document.hidden && cur) {
         if (!video.paused) video.pause();
         flushDrawings();
+      }
+      // カメラ画面：裏に回ったら録画を止めてカメラを解放し、戻ったら再起動する
+      if (currentScreen === 'camera') {
+        if (document.hidden) {
+          if (cam.recording) stopRec();
+          else { cam.token++; stopStream(); }
+        } else if (!cam.stream && !cam.recording && !cam.failed) {
+          startStream();
+        }
       }
     });
     window.addEventListener('pagehide', flushDrawings);

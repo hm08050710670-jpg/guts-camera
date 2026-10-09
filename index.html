@@ -78,16 +78,38 @@
     </button>
     <button class="big-btn" id="btn-camera">
       <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="7" width="18" height="13" rx="2.5"/><path d="M8.5 7L10 4.5h4L15.500 7"/><circle cx="12" cy="13.500" r="3.500"/></svg>
-      <span><b>カメラで撮影</b><small>iPhoneのカメラを起動して撮影</small></span>
+      <span><b>カメラで撮影</b><small>アプリ内のカメラで撮って、すぐ分析</small></span>
     </button>
 
     <div class="note">
-      <p><b>きれいにスロー分析するコツ</b></p>
-      <p>iPhone標準の「カメラ」アプリで撮影してから「動画を取り込む」で読み込む方法がおすすめです。「カメラで撮影」は通常のビデオ画質で撮影されます。</p>
+      <p><b>きれいに分析するコツ</b></p>
+      <p>「カメラで撮影」は、撮ってすぐ分析できます（30〜60fps）。</p>
+      <p>より細かくコマ送りしたいときは、iPhone標準の「カメラ」でスロー撮影した動画を「ファイル」アプリに保存し、「動画を取り込む」→「ファイルを選択」から読み込んでください。写真ライブラリから選ぶと画質が下がる場合があります。</p>
     </div>
 
     <input type="file" id="file-import" class="file-input" accept="video/*" tabindex="-1" aria-hidden="true">
     <input type="file" id="file-camera" class="file-input" accept="video/*" capture="environment" tabindex="-1" aria-hidden="true">
+  </div>
+</section>
+
+<!-- ===================== アプリ内カメラ ===================== -->
+<section id="screen-camera" class="screen camera" aria-label="カメラ">
+  <header class="cam-top">
+    <button class="bar-btn" id="cam-back" aria-label="戻る"><svg viewBox="0 0 24 24"><path d="M15 4l-8 8 8 8"/></svg></button>
+    <div class="cam-info">
+      <span id="cam-dir">後方</span>
+      <span id="cam-quality"></span>
+    </div>
+    <div class="cam-timer" id="cam-timer" hidden><i></i><span id="cam-time">0:00</span></div>
+  </header>
+  <div class="cam-stage">
+    <video id="cam-video" playsinline webkit-playsinline muted autoplay disablepictureinpicture></video>
+    <div class="stage-msg" id="cam-msg" hidden></div>
+  </div>
+  <div class="cam-bottom">
+    <button class="cam-side" id="cam-fps" aria-label="フレームレート切り替え">60fps</button>
+    <button class="cam-rec" id="cam-rec" aria-label="録画開始"><i></i></button>
+    <button class="cam-side" id="cam-flip" aria-label="カメラの前後切り替え"><svg viewBox="0 0 24 24"><path d="M4 9a8 8 0 0114-3l2 2M20 15a8 8 0 01-14 3l-2-2"/><path d="M20 4v4h-4M4 20v-4h4"/></svg></button>
   </div>
 </section>
 
