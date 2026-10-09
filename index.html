@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>GUTS CAMERA</title>
+<meta name="description" content="ゴルフスイングを動画で撮影・取り込みし、補助線とスロー・コマ送りで分析するアプリ">
+<meta name="theme-color" content="#0B0B0B">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="GUTS CAMERA">
+<meta name="format-detection" content="telephone=no">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ===================== ホーム ===================== -->
+<section id="screen-home" class="screen is-active" aria-label="ホーム">
+  <div class="scroll">
+    <header class="home-head">
+      <h1 class="logo"><span>GUTS</span> CAMERA</h1>
+      <p class="logo-sub">SWING ANALYZER</p>
+    </header>
+
+    <nav class="menu">
+      <button class="menu-item is-primary" data-go="capture">
+        <svg viewBox="0 0 48 48" aria-hidden="true"><rect x="5" y="14" width="38" height="26" rx="5"/><path d="M17 14l3-5h8l3 5"/><circle cx="24" cy="27" r="7.5"/></svg>
+        <span class="menu-label">撮影する</span>
+        <span class="menu-desc">撮影・動画の取り込み</span>
+      </button>
+      <button class="menu-item" data-go="list-my">
+        <svg viewBox="0 0 48 48" aria-hidden="true"><rect x="6" y="9" width="36" height="30" rx="5"/><path d="M20 18v12l11-6z"/></svg>
+        <span class="menu-label">マイスイング</span>
+        <span class="menu-desc">保存した自分の動画</span>
+      </button>
+      <button class="menu-item" data-go="list-fav">
+        <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M24 6l5.6 11.4 12.6 1.8-9.1 8.9 2.1 12.5L24 34.7l-11.2 5.9 2.1-12.5-9.1-8.9 12.6-1.8z"/></svg>
+        <span class="menu-label">お気に入り</span>
+        <span class="menu-desc">登録した動画だけ表示</span>
+      </button>
+      <button class="menu-item" data-go="list-model">
+        <svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="13" r="6"/><path d="M11 42c0-9 5.5-15 13-15s13 6 13 15"/><path d="M33 9l3 3 6-7"/></svg>
+        <span class="menu-label">お手本動画</span>
+        <span class="menu-desc">プロなどのお手本</span>
+      </button>
+    </nav>
+
+    <footer class="home-foot">
+      <p id="storage-info" class="foot-line"></p>
+      <p class="foot-line">動画はこのiPhoneの中だけに保存されます。iOSの都合で消える場合があるため、元の動画は「写真」アプリにも残しておいてください。</p>
+      <p class="foot-ver">GUTS CAMERA <span id="app-version"></span></p>
+    </footer>
+  </div>
+</section>
+
+<!-- ===================== 撮影・取り込み ===================== -->
+<section id="screen-capture" class="screen" aria-label="撮影・取り込み">
+  <header class="bar">
+    <button class="bar-btn" data-back aria-label="戻る"><svg viewBox="0 0 24 24"><path d="M15 4l-8 8 8 8"/></svg></button>
+    <h2 class="bar-title">撮影する</h2>
+    <span class="bar-spacer"></span>
+  </header>
+  <div class="scroll pad">
+    <p class="field-label">撮影方向</p>
+    <div class="seg" id="cap-dir" role="group" aria-label="撮影方向">
+      <button data-val="後方" class="is-on">後方</button>
+      <button data-val="正面">正面</button>
+    </div>
+    <p class="hint" id="cap-dir-hint">後方：シャフトラインの確認におすすめ</p>
+
+    <button class="big-btn is-primary" id="btn-import">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V4M7 9l5-5 5 5M4 15v4a1 1 0 001 1h14a1 1 0 001-1v-4"/></svg>
+      <span><b>動画を取り込む</b><small>写真ライブラリ・ファイルから選ぶ（おすすめ）</small></span>
+    </button>
+    <button class="big-btn" id="btn-camera">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="7" width="18" height="13" rx="2.5"/><path d="M8.5 7L10 4.5h4L15.500 7"/><circle cx="12" cy="13.500" r="3.500"/></svg>
+      <span><b>カメラで撮影</b><small>iPhoneのカメラを起動して撮影</small></span>
+    </button>
+
+    <div class="note">
+      <p><b>きれいにスロー分析するコツ</b></p>
+      <p>iPhone標準の「カメラ」アプリで撮影してから「動画を取り込む」で読み込む方法がおすすめです。「カメラで撮影」は通常のビデオ画質で撮影されます。</p>
+    </div>
+
+    <input type="file" id="file-import" class="file-input" accept="video/*" tabindex="-1" aria-hidden="true">
+    <input type="file" id="file-camera" class="file-input" accept="video/*" capture="environment" tabindex="-1" aria-hidden="true">
+  </div>
+</section>
+
+<!-- ===================== 一覧 ===================== -->
+<section id="screen-list" class="screen" aria-label="動画一覧">
+  <header class="bar">
+    <button class="bar-btn" data-back aria-label="戻る"><svg viewBox="0 0 24 24"><path d="M15 4l-8 8 8 8"/></svg></button>
+    <h2 class="bar-title" id="list-title">マイスイング</h2>
+    <button class="bar-action" id="list-add" hidden>＋ 追加</button>
+    <span class="bar-spacer" id="list-spacer"></span>
+  </header>
+  <div class="filters" id="list-filters">
+    <select id="f-club" aria-label="クラブで絞り込み"></select>
+    <select id="f-dir" aria-label="撮影方向で絞り込み">
+      <option value="">方向：すべて</option>
+      <option value="後方">後方</option>
+      <option value="正面">正面</option>
+    </select>
+    <button id="f-fav" class="chip" aria-pressed="false">★ のみ</button>
+  </div>
+  <div class="scroll">
+    <div id="list-grid" class="grid"></div>
+    <div id="list-empty" class="empty" hidden></div>
+  </div>
+  <input type="file" id="file-model" class="file-input" accept="video/*" tabindex="-1" aria-hidden="true">
+</section>
+
+<!-- ===================== 動画分析 ===================== -->
+<section id="screen-analyze" class="screen analyze" aria-label="動画分析">
+  <header class="an-top">
+    <button class="bar-btn" id="an-back" aria-label="戻る"><svg viewBox="0 0 24 24"><path d="M15 4l-8 8 8 8"/></svg></button>
+    <div class="an-title" id="an-title"></div>
+    <button class="bar-btn star" id="an-fav" aria-label="お気に入り" aria-pressed="false"><svg viewBox="0 0 24 24"><path d="M12 3l2.8 5.700 6.300.9-4.550 4.450 1.050 6.250L12 17.350 6.400 20.300l1.050-6.250L2.900 9.600l6.300-.9z"/></svg></button>
+    <button class="save-btn" id="an-save">保存</button>
+  </header>
+
+  <div class="stage" id="stage">
+    <div class="frame" id="frame">
+      <video id="video" playsinline webkit-playsinline muted preload="auto" disablepictureinpicture x-webkit-airplay="deny"></video>
+      <svg id="overlay" aria-label="補助線"></svg>
+    </div>
+    <div class="draw-hint" id="draw-hint" hidden></div>
+    <div class="stage-msg" id="stage-msg" hidden></div>
+  </div>
+
+  <div class="an-controls" id="an-controls">
+    <div class="seek-row">
+      <div class="seek" id="seek" role="slider" aria-label="再生位置" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" tabindex="0">
+        <div class="seek-track"><div class="seek-fill" id="seek-fill"></div></div>
+        <div class="seek-thumb" id="seek-thumb"></div>
+      </div>
+      <div class="time" id="time">0:00.00 / 0:00.00</div>
+    </div>
+
+    <div class="transport">
+      <button class="t-btn" id="btn-prev" aria-label="1コマ戻る"><svg viewBox="0 0 24 24"><path d="M14 5l-8 7 8 7z"/><rect x="16" y="5" width="2.600" height="14" rx="1"/></svg><span>1コマ戻る</span></button>
+      <button class="t-btn play" id="btn-play" aria-label="再生／停止">
+        <svg class="i-play" viewBox="0 0 24 24"><path d="M7 4l13 8-13 8z"/></svg>
+        <svg class="i-pause" viewBox="0 0 24 24"><rect x="5.500" y="4" width="4.500" height="16" rx="1.200"/><rect x="14" y="4" width="4.500" height="16" rx="1.200"/></svg>
+      </button>
+      <button class="t-btn" id="btn-next" aria-label="1コマ進む"><svg viewBox="0 0 24 24"><rect x="5.400" y="5" width="2.600" height="14" rx="1"/><path d="M10 5l8 7-8 7z"/></svg><span>1コマ進む</span></button>
+    </div>
+
+    <div class="speed-row">
+      <div class="speeds" id="speeds" role="group" aria-label="再生速度">
+        <button data-rate="1" class="is-on">1.0倍</button>
+        <button data-rate="0.5">0.5倍</button>
+        <button data-rate="0.25">0.25倍</button>
+        <button data-rate="0.125">0.125倍</button>
+      </div>
+      <button class="fps-chip" id="fps-chip" aria-label="コマ送りの設定">コマ送り 30fps</button>
+    </div>
+
+    <div class="tools-wrap">
+      <div class="tools" id="tools-main">
+        <button class="tool mode" id="tool-mode" aria-pressed="false"><svg viewBox="0 0 24 24"><path d="M4 20l1-4L16 5l3 3L8 19z"/></svg><span>描画</span></button>
+        <span class="tool-sep"></span>
+        <button class="tool" data-tool="line"><svg viewBox="0 0 24 24"><path d="M4 20L20 4"/><circle cx="4" cy="20" r="1.800"/><circle cx="20" cy="4" r="1.800"/></svg><span>シャフトライン</span></button>
+        <button class="tool" data-tool="sway"><svg viewBox="0 0 24 24"><path d="M7 3v18M17 3v18"/></svg><span>スウェーライン</span></button>
+        <button class="tool" data-tool="rect"><svg viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="1"/></svg><span>頭の枠</span></button>
+        <span class="tool-sep"></span>
+        <button class="tool" id="tool-style"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle id="style-dot" cx="12" cy="12" r="4.200" class="dot"/></svg><span>色・太さ</span></button>
+        <button class="tool" id="tool-extend" aria-pressed="false"><svg viewBox="0 0 24 24"><path d="M3 21L21 3M3 21h5M3 21v-5M21 3h-5M21 3v5"/></svg><span>延長</span></button>
+        <button class="tool" id="tool-delete"><svg viewBox="0 0 24 24"><path d="M5 7h14M10 7V4h4v3M7 7l1 13h8l1-13"/></svg><span>削除</span></button>
+        <button class="tool" id="tool-undo"><svg viewBox="0 0 24 24"><path d="M8 5L3 10l5 5"/><path d="M3 10h11a6 6 0 010 12h-3"/></svg><span>ひとつ戻す</span></button>
+        <button class="tool" id="tool-hide" aria-pressed="false"><svg viewBox="0 0 24 24"><path d="M2 12s3.600-7 10-7 10 7 10 7-3.600 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/><path class="slash" d="M4 4l16 16"/></svg><span id="tool-hide-label">すべて非表示</span></button>
+      </div>
+      <div class="tools" id="tools-style" hidden>
+        <button class="tool" id="style-back"><svg viewBox="0 0 24 24"><path d="M15 4l-8 8 8 8"/></svg><span>戻る</span></button>
+        <span class="tool-sep"></span>
+        <div class="swatches" id="swatches" role="group" aria-label="線の色"></div>
+        <span class="tool-sep"></span>
+        <div class="widths" id="widths" role="group" aria-label="線の太さ">
+          <button data-w="2"><i style="height:2px"></i><span>細</span></button>
+          <button data-w="3.500"><i style="height:4px"></i><span>中</span></button>
+          <button data-w="5.500"><i style="height:6px"></i><span>太</span></button>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== 保存フォーム ===================== -->
+<div class="sheet-back" id="save-sheet" hidden>
+  <form class="sheet" id="save-form" autocomplete="off">
+    <h3 id="save-heading">動画を保存</h3>
+    <label class="field">
+      <span id="save-title-label">動画タイトル</span>
+      <input type="text" id="s-title" maxlength="40" enterkeyhint="done">
+    </label>
+    <label class="field" id="s-date-field">
+      <span>撮影日</span>
+      <input type="date" id="s-date">
+    </label>
+    <label class="field">
+      <span>使用クラブ</span>
+      <select id="s-club"></select>
+    </label>
+    <div class="field">
+      <span>撮影方向</span>
+      <div class="seg" id="s-dir" role="group" aria-label="撮影方向">
+        <button type="button" data-val="後方" class="is-on">後方</button>
+        <button type="button" data-val="正面">正面</button>
+      </div>
+    </div>
+    <label class="field">
+      <span>メモ</span>
+      <textarea id="s-memo" rows="3" maxlength="400"></textarea>
+    </label>
+    <label class="switch">
+      <span>お気に入りに登録</span>
+      <input type="checkbox" id="s-fav"><i></i>
+    </label>
+    <div class="sheet-actions">
+      <button type="button" class="btn" id="save-cancel">キャンセル</button>
+      <button type="submit" class="btn is-primary" id="save-ok">保存する</button>
+    </div>
+  </form>
+</div>
+
+<!-- ===================== コマ送り設定 ===================== -->
+<div class="sheet-back" id="fps-sheet" hidden>
+  <div class="sheet">
+    <h3>コマ送りの設定</h3>
+    <p class="sheet-text" id="fps-desc"></p>
+    <div class="opt-list" id="fps-opts"></div>
+    <p class="sheet-text small">ブラウザでは動画の正確なコマ位置を取得できないため、コマ送りは「1コマ分の時間だけ進める」近似の動作です。動画によっては、同じコマが続いたり1コマ飛ぶことがあります。</p>
+    <div class="sheet-actions">
+      <button type="button" class="btn is-primary" id="fps-close">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== 確認ダイアログ ===================== -->
+<div class="sheet-back center" id="dialog" hidden>
+  <div class="dialog" role="alertdialog" aria-modal="true">
+    <h3 id="dialog-title"></h3>
+    <p id="dialog-text"></p>
+    <div class="dialog-actions" id="dialog-actions"></div>
+  </div>
+</div>
+
+<div class="busy" id="busy" hidden><div class="spinner"></div><p id="busy-text">読み込み中…</p></div>
+<div class="toast" id="toast" hidden></div>
+<div class="update-bar" id="update-bar" hidden>
+  <span>新しいバージョンがあります</span>
+  <button id="update-btn">更新</button>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
