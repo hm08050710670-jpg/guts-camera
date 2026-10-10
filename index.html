@@ -146,6 +146,7 @@
   <header class="an-top">
     <button class="bar-btn" id="an-back" aria-label="戻る"><svg viewBox="0 0 24 24"><path d="M15 4l-8 8 8 8"/></svg></button>
     <button class="shoot-btn" id="an-shoot" aria-label="次の動画を録画"><i aria-hidden="true"></i><span>録画</span></button>
+    <button class="voice-btn" id="an-voice" aria-label="声を録音して解説動画を作る" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.500 11a6.500 6.500 0 0013 0M12 17.500V21"/></svg><i aria-hidden="true"></i><span id="an-voice-label">録音</span></button>
     <div class="an-title" id="an-title"></div>
     <button class="bar-btn star" id="an-fav" aria-label="お気に入り" aria-pressed="false"><svg viewBox="0 0 24 24"><path d="M12 3l2.8 5.700 6.300.9-4.550 4.450 1.050 6.250L12 17.350 6.400 20.300l1.050-6.250L2.900 9.600l6.300-.9z"/></svg></button>
     <button class="save-btn" id="an-save">保存</button>
@@ -266,6 +267,21 @@
     <div class="sheet-actions">
       <button type="button" class="btn is-primary" id="fps-close">閉じる</button>
     </div>
+  </div>
+</div>
+
+<!-- ===================== 解説動画（録音）の結果 ===================== -->
+<div class="sheet-back" id="voice-sheet" hidden>
+  <div class="sheet">
+    <h3>解説動画ができました</h3>
+    <video class="voice-preview" id="voice-preview" controls playsinline webkit-playsinline preload="metadata"></video>
+    <p class="sheet-text" id="voice-info"></p>
+    <div class="voice-actions">
+      <button type="button" class="btn is-primary" id="voice-share">共有・保存（写真・LINEなど）</button>
+      <button type="button" class="btn" id="voice-keep">アプリに保存（マイスイング）</button>
+      <button type="button" class="btn" id="voice-close">閉じる</button>
+    </div>
+    <p class="sheet-text small">「共有・保存」→「ビデオを保存」を選ぶと、写真アプリに保存できます。</p>
   </div>
 </div>
 

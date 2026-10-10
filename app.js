@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var APP_VERSION = '1.8.1';
+  var APP_VERSION = '1.9.0';
 
   var CLUBS = ['ドライバー', '3W', '5W', 'UT', '5I', '6I', '7I', '8I', '9I', 'PW', 'AW', 'SW', 'パター', 'その他'];
   var COLORS = [
@@ -103,8 +103,8 @@
   function toast(msg, ms) {
     var el = $('toast');
     el.textContent = msg;
-    // カメラ画面では録画ボタンに重ならないよう、上側に表示する
-    el.classList.toggle('is-high', currentScreen === 'camera');
+    // カメラ画面では録画ボタンに重ならないよう、上側に表示する（解説動画の録音中も、操作パネルに重ならないよう上側）
+    el.classList.toggle('is-high', currentScreen === 'camera' || voice.recording);
     el.hidden = false;
     clearTimeout(toastTimer);
     toastTimer = setTimeout(function () { el.hidden = true; }, ms || 2600);
@@ -1172,6 +1172,8 @@
         cur.priming = false;
         try { video.currentTime = 0; } catch (e) {}
         applyRate();
+        // 声の入った動画（アプリで作った解説動画）は、音を出して再生する
+        video.muted = !cur.meta.hasAudio;
         cur.ready = true;
         screenAn.classList.remove('is-playing');
         updateTimeUI(0);
@@ -1197,6 +1199,7 @@
 
   function closeVideo(navigate) {
     if (!cur) return;
+    stopVoice(true);   // 録音の途中で動画を閉じる場合は、録音を破棄する
     flushDrawings();
     var from = cur.from;
     var url = cur.url;
@@ -1251,6 +1254,364 @@
       if (v === 'save') openSaveSheet();
       else if (v === 'go') go();
     });
+  }
+
+  /* ==========================================================
+     解説動画の録音
+     分析画面の映像（動画＋補助線）とマイクの声を、再生・コマ送り・線の操作をしながら
+     1本の動画にまとめる。操作パネルやボタンは動画に入らない。
+     ========================================================== */
+  var VOICE_MAX_SEC = 180;      // 1回の録音の上限（秒）
+  var VOICE_LONG_SIDE = 1280;   // 作る動画の長辺（ピクセル）
+  var voice = {
+    recording: false, starting: false, rec: null, chunks: [], mic: null, tracks: [],
+    canvas: null, ctx: null, raf: 0, timer: 0, stopTimer: 0, t0: 0, secs: 0, lastDraw: 0,
+    discard: false, auto: false, hasAudio: false, result: null
+  };
+
+  function voiceSupported() {
+    return !!(window.MediaRecorder && window.MediaStream &&
+      typeof HTMLCanvasElement !== 'undefined' && HTMLCanvasElement.prototype.captureStream);
+  }
+  function stopTracks(list) {
+    (list || []).forEach(function (t) { try { t.stop(); } catch (e) {} });
+  }
+  function getMic() {
+    if (!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) return Promise.reject(new Error('no-mic'));
+    return navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true }, video: false });
+  }
+
+  function toggleVoice() {
+    if (voice.recording) { stopVoice(); return; }
+    if (voice.starting || voice.rec || !cur || !cur.ready) return;   // voice.rec：前の録音の仕上げ中
+    if (!voiceSupported()) {
+      ask('この端末では録音できません', '解説動画を作るための機能が、このブラウザにはありません。iOSを最新にしてからお試しください。', [{ label: 'OK', value: 1, kind: 'primary' }]);
+      return;
+    }
+    var token = cur.token;
+    voice.starting = true;
+    getMic().then(function (mic) {
+      voice.starting = false;
+      if (!cur || cur.token !== token || currentScreen !== 'analyze' || document.hidden) { stopTracks(mic.getTracks()); return; }
+      beginVoice(mic);
+    }, function (err) {
+      voice.starting = false;
+      if (!cur || cur.token !== token) return;
+      var denied = err && (err.name === 'NotAllowedError' || err.name === 'SecurityError');
+      ask('マイクを使えません', denied
+        ? 'マイクの使用が許可されていません。\niPhoneの「設定」でこのアプリ（Safari）のマイクを許可してから、もう一度お試しください。'
+        : 'マイクを開始できませんでした。ほかのアプリがマイクを使っていないか確認してください。', [
+        { label: '声なしで作る', value: 'mute', kind: 'primary' },
+        { label: 'キャンセル', value: '' }
+      ]).then(function (v) {
+        if (v === 'mute' && cur && cur.token === token && cur.ready && !voice.recording) beginVoice(null);
+      });
+    });
+  }
+
+  function beginVoice(mic) {
+    var vw = video.videoWidth || cur.meta.w, vh = video.videoHeight || cur.meta.h;
+    var s = Math.min(1, VOICE_LONG_SIDE / Math.max(vw, vh));
+    var c = document.createElement('canvas');
+    c.width = Math.max(2, Math.round(vw * s / 2) * 2);
+    c.height = Math.max(2, Math.round(vh * s / 2) * 2);
+    c.className = 'voice-canvas';
+    document.body.appendChild(c);
+    voice.canvas = c;
+    voice.ctx = c.getContext('2d');
+    voice.ctx.fillStyle = '#000';
+    voice.ctx.fillRect(0, 0, c.width, c.height);
+    voice.mic = mic;
+    drawVoiceFrame();
+
+    var rec, mime = pickRecMime();
+    try {
+      var vt = c.captureStream(30).getVideoTracks();
+      var at = mic ? mic.getAudioTracks() : [];
+      voice.tracks = vt.concat(mic ? mic.getTracks() : []);
+      var stream = new MediaStream(vt.concat(at));
+      var opts = { videoBitsPerSecond: 5000000, audioBitsPerSecond: 128000 };
+      if (mime) opts.mimeType = mime;
+      try { rec = new MediaRecorder(stream, opts); }
+      catch (e) { rec = new MediaRecorder(stream); }
+    } catch (e2) {
+      cleanupVoice();
+      toast('録音を開始できませんでした');
+      return;
+    }
+    voice.rec = rec;
+    voice.chunks = [];
+    voice.discard = false;
+    rec.ondataavailable = function (e) { if (e.data && e.data.size && voice.rec === rec) voice.chunks.push(e.data); };
+    rec.onerror = function () { if (voice.rec === rec && voice.recording) { stopVoice(true); toast('録音中にエラーが発生しました'); } };
+    rec.onstop = function () { finishVoice(rec, mime); };
+    try { rec.start(1000); }
+    catch (e3) { voice.rec = null; cleanupVoice(); toast('録音を開始できませんでした'); return; }
+
+    voice.recording = true;
+    voice.auto = false;
+    voice.hasAudio = !!(mic && mic.getAudioTracks().length);
+    voice.t0 = performance.now();
+    voice.lastDraw = 0;
+    setVoiceUI(true);
+    voice.raf = requestAnimationFrame(voiceLoop);
+    clearInterval(voice.timer);
+    voice.timer = setInterval(function () {
+      var sec = Math.floor((performance.now() - voice.t0) / 1000);
+      $('an-voice-label').textContent = Math.floor(sec / 60) + ':' + pad2(sec % 60);
+      // 画面の描画が止まっている間（rAFが動かない場合）も、映像が途切れないようにする
+      if (performance.now() - voice.lastDraw > 400) drawVoiceFrame();
+      if (sec >= VOICE_MAX_SEC) { voice.auto = true; stopVoice(); }
+    }, 250);
+    toast(voice.hasAudio
+      ? '録音中：再生・コマ送り・線の操作がそのまま動画になります'
+      : '作成中（声なし）：再生・コマ送り・線の操作がそのまま動画になります', 3200);
+  }
+
+  function setVoiceUI(on) {
+    var b = $('an-voice');
+    screenAn.classList.toggle('is-voice', on);
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    b.setAttribute('aria-label', on ? '録音を終了' : '声を録音して解説動画を作る');
+    $('an-voice-label').textContent = on ? '0:00' : '録音';
+  }
+
+  function voiceLoop() {
+    if (!voice.recording) return;
+    voice.raf = requestAnimationFrame(voiceLoop);
+    if (performance.now() - voice.lastDraw < 30) return;   // 約30コマ/秒
+    drawVoiceFrame();
+  }
+
+  // いま画面に出ている映像と補助線を、録音用のキャンバスに描く
+  function drawVoiceFrame() {
+    var c = voice.canvas, ctx = voice.ctx;
+    if (!c || !ctx || !cur) return;
+    voice.lastDraw = performance.now();
+    var w = c.width, h = c.height;
+    try { ctx.drawImage(video, 0, 0, w, h); } catch (e) {}
+    if (cur.hidden || !cur.fw) return;
+    var k = w / cur.fw;   // 画面上の線の太さを、作る動画の大きさに合わせて換算する
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'miter';
+    cur.shapes.forEach(function (s) {
+      var sw = (s.width || 3.5) * k;
+      ctx.beginPath();
+      if (s.type === 'rect') {
+        ctx.rect(s.x * w, s.y * h, s.w * w, s.h * h);
+      } else if (s.type === 'line' || s.type === 'vline') {
+        var x1, y1, x2, y2;
+        if (s.type === 'line') { x1 = s.x1 * w; y1 = s.y1 * h; x2 = s.x2 * w; y2 = s.y2 * h; }
+        else { x1 = x2 = s.x * w; y1 = s.y1 * h; y2 = s.y2 * h; }
+        if (s.type === 'line' && s.extend) {
+          var dx = x2 - x1, dy = y2 - y1;
+          var e = (w + h) * 2 / (Math.hypot(dx, dy) || 1);
+          x1 -= dx * e; y1 -= dy * e; x2 += dx * e; y2 += dy * e;
+        }
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+      } else {
+        return;
+      }
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.45)';
+      ctx.lineWidth = sw + 2.5 * k;
+      ctx.stroke();
+      ctx.strokeStyle = s.color || '#DFFF00';
+      ctx.lineWidth = sw;
+      ctx.stroke();
+    });
+  }
+
+  function stopVoice(discard) {
+    if (!voice.recording) return;
+    voice.recording = false;
+    voice.discard = !!discard;
+    voice.secs = (performance.now() - voice.t0) / 1000;
+    clearInterval(voice.timer);
+    voice.timer = 0;
+    cancelAnimationFrame(voice.raf);
+    setVoiceUI(false);
+    var rec = voice.rec;
+    if (discard) {
+      // 破棄する場合は結果を待たず、マイクとキャンバスをすぐに解放する
+      voice.rec = null;
+      voice.discard = false;
+      if (rec) {
+        rec.ondataavailable = rec.onerror = rec.onstop = null;
+        try { if (rec.state !== 'inactive') rec.stop(); } catch (e0) {}
+      }
+      cleanupVoice();
+      return;
+    }
+    try {
+      if (rec && rec.state !== 'inactive') {
+        rec.stop();
+        // 停止の通知が届かない端末があるため、一定時間たったら受け取れた分で仕上げる
+        clearTimeout(voice.stopTimer);
+        voice.stopTimer = setTimeout(function () { finishVoice(rec, ''); }, 3000);
+        return;
+      }
+    } catch (e) {}
+    finishVoice(rec, '');
+  }
+
+  function voiceThumb() {
+    try {
+      var c = voice.canvas;
+      var s = Math.min(1, 400 / Math.max(c.width, c.height));
+      var t = document.createElement('canvas');
+      t.width = Math.max(1, Math.round(c.width * s));
+      t.height = Math.max(1, Math.round(c.height * s));
+      t.getContext('2d').drawImage(c, 0, 0, t.width, t.height);
+      return t.toDataURL('image/jpeg', 0.72);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function cleanupVoice() {
+    clearTimeout(voice.stopTimer);
+    voice.stopTimer = 0;
+    stopTracks(voice.tracks);
+    voice.tracks = [];
+    voice.mic = null;
+    if (voice.canvas && voice.canvas.parentNode) voice.canvas.parentNode.removeChild(voice.canvas);
+    voice.canvas = null;
+    voice.ctx = null;
+    voice.chunks = [];
+  }
+
+  function finishVoice(rec, mime) {
+    if (!rec || voice.rec !== rec) return;   // 二重に仕上げない
+    voice.rec = null;
+    var type = (rec.mimeType || mime || 'video/mp4').split(';')[0] || 'video/mp4';
+    var blob = new Blob(voice.chunks, { type: type });
+    var res = {
+      blob: blob, secs: voice.secs, hasAudio: !!voice.hasAudio, thumb: voiceThumb(),
+      w: voice.canvas ? voice.canvas.width : 0, h: voice.canvas ? voice.canvas.height : 0,
+      auto: !!voice.auto, kept: false, savedApp: false
+    };
+    var discard = voice.discard;
+    voice.discard = false;
+    cleanupVoice();
+    if (discard || !cur) return;
+    if (!blob.size || res.secs < 1) { toast('録音が短すぎます。もう一度お試しください'); return; }
+    openVoiceSheet(res);
+  }
+
+  function openVoiceSheet(res) {
+    var d = new Date();
+    res.name = 'guts-camera-' + todayStr(d).replace(/-/g, '') + '-' + pad2(d.getHours()) + pad2(d.getMinutes()) + pad2(d.getSeconds()) +
+      (/webm/.test(res.blob.type) ? '.webm' : '.mp4');
+    res.url = URL.createObjectURL(res.blob);
+    voice.result = res;
+    if (!video.paused) video.pause();
+    var sec = Math.round(res.secs);
+    $('voice-info').textContent = '長さ ' + Math.floor(sec / 60) + ':' + pad2(sec % 60) + '・約' + fmtSize(res.blob.size) +
+      (res.hasAudio ? '' : '・声なし') + (res.auto ? '\n上限の' + (VOICE_MAX_SEC / 60) + '分になったため、自動で終了しました。' : '');
+    var keep = $('voice-keep');
+    keep.disabled = false;
+    keep.textContent = 'アプリに保存（マイスイング）';
+    $('toast').hidden = true;
+    $('voice-sheet').hidden = false;
+    var pv = $('voice-preview');
+    pv.src = res.url;
+    pv.load();
+    // 作ったばかりの動画は長さが取得できないことがあるので、確定させてから先頭に戻す
+    waitMeta(pv, 8000).then(function () {
+      if (voice.result !== res) return;
+      return ensureDuration(pv).then(function () { if (voice.result === res) return seekStart(pv); });
+    }).catch(function () {});
+  }
+
+  function shareVoice() {
+    var r = voice.result;
+    if (!r) return;
+    var file = null;
+    try { file = new File([r.blob], r.name, { type: r.blob.type }); } catch (e) {}
+    var ok = false;
+    try { ok = !!(file && navigator.share && navigator.canShare && navigator.canShare({ files: [file] })); } catch (e2) {}
+    try { $('voice-preview').pause(); } catch (e3) {}
+    if (ok) {
+      navigator.share({ files: [file] }).then(function () { r.kept = true; }, function (err) {
+        if (err && err.name === 'AbortError') return;   // 共有画面を閉じただけ
+        toast('共有できませんでした。「アプリに保存」をお試しください', 3600);
+      });
+      return;
+    }
+    // 共有に対応していない環境では、ファイルとして書き出す
+    var a = document.createElement('a');
+    a.href = r.url;
+    a.download = r.name;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    r.kept = true;
+    toast('ファイルとして書き出しました');
+  }
+
+  // 解説動画を、マイスイングの新しい1本としてアプリに保存する（元の動画はそのまま）
+  function keepVoice() {
+    var r = voice.result;
+    if (!r || r.savedApp || !cur) return;
+    var m = cur.meta, now = Date.now(), id = uid();
+    var base = cur.saved && m.title ? m.title : defaultTitle(todayStr(), m.club, m.dir);
+    var item = {
+      id: id, kind: 'my',
+      title: ('解説 ' + base).slice(0, 40),
+      date: todayStr(), club: m.club || 'ドライバー', dir: m.dir || '後方', memo: '', fav: false,
+      fps: 'auto', estFps: 0, size: r.blob.size, type: r.blob.type || 'video/mp4',
+      duration: r.secs, w: r.w, h: r.h, fp: '', thumb: r.thumb, hasAudio: r.hasAudio,
+      createdAt: now, updatedAt: now
+    };
+    function write(videoRec) {
+      return dbTx(['items', 'videos', 'drawings'], 'readwrite', function (tx) {
+        tx.objectStore('videos').put(videoRec);
+        tx.objectStore('items').put(item);
+        tx.objectStore('drawings').put({ id: id, shapes: [], updatedAt: now });
+      });
+    }
+    var keep = $('voice-keep');
+    keep.disabled = true;
+    busy(true, '保存しています…');
+    write({ id: id, blob: r.blob, type: item.type }).catch(function (err) {
+      if ((err && /quota/i.test(err.name || '')) || r.blob.size > 200 * 1048576) throw err;
+      return new Response(r.blob).arrayBuffer().then(function (buf) {
+        return write({ id: id, buf: buf, type: item.type });
+      });
+    }).then(function () {
+      busy(false);
+      r.savedApp = r.kept = true;
+      keep.textContent = 'アプリに保存しました';
+      toast('マイスイングに保存しました');
+      if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(function () {});
+    }).catch(function (err) {
+      busy(false);
+      keep.disabled = false;
+      var quota = err && /quota/i.test((err.name || '') + (err.message || ''));
+      ask('保存できませんでした', quota
+        ? 'アプリに保存できる容量が不足しています。不要な動画を削除するか、「共有・保存」で写真アプリに保存してください。'
+        : 'このブラウザの設定（プライベートブラウズなど）や空き容量が原因の可能性があります。「共有・保存」で写真アプリに保存してください。',
+        [{ label: 'OK', value: 1, kind: 'primary' }]);
+    });
+  }
+
+  function closeVoiceSheet() {
+    var r = voice.result;
+    function done() {
+      var pv = $('voice-preview');
+      try { pv.pause(); } catch (e) {}
+      pv.removeAttribute('src');
+      try { pv.load(); } catch (e2) {}
+      if (r) setTimeout(function () { URL.revokeObjectURL(r.url); }, 0);
+      voice.result = null;
+      $('voice-sheet').hidden = true;
+    }
+    if (!r || r.kept) { done(); return; }
+    ask('まだ保存していません', 'この解説動画は、共有もアプリへの保存もしていません。閉じると消えます。', [
+      { label: '消して閉じる', value: 'drop', kind: 'danger' },
+      { label: '戻る', value: '' }
+    ]).then(function (v) { if (v === 'drop') done(); });
   }
 
   function updateHeader() {
@@ -2114,6 +2475,7 @@
       w: m.w, h: m.h,
       fp: m.fp || '',
       thumb: m.thumb || null,
+      hasAudio: !!m.hasAudio,
       createdAt: m.createdAt || Date.now(),
       updatedAt: Date.now()
     };
@@ -2417,6 +2779,10 @@
     // 動画分析：上部
     $('an-back').addEventListener('click', requestBack);
     $('an-shoot').addEventListener('click', shootNext);
+    $('an-voice').addEventListener('click', toggleVoice);
+    $('voice-share').addEventListener('click', shareVoice);
+    $('voice-keep').addEventListener('click', keepVoice);
+    $('voice-close').addEventListener('click', closeVoiceSheet);
     $('an-save').addEventListener('click', openSaveSheet);
     $('an-fav').addEventListener('click', function () {
       if (!cur || !cur.ready) return;
@@ -2433,6 +2799,7 @@
     // 動画分析：動画タップで操作パネルの表示・非表示（再生モードのみ）
     stage.addEventListener('click', function (e) {
       if (!cur || !cur.ready || cur.mode !== 'play') return;
+      if (voice.recording) return;   // 録音中は、終了ボタンが隠れないようにパネルを出したままにする
       if (e.target.closest && e.target.closest('#stage-msg')) return;
       var hide = !screenAn.classList.contains('panels-hidden');
       screenAn.classList.toggle('panels-hidden', hide);
@@ -2522,6 +2889,8 @@
 
     // バックグラウンドに移ったら再生を止め、補助線を確実に保存する
     document.addEventListener('visibilitychange', function () {
+      // 録音中に裏へ回ったら、そこまでの分で解説動画を仕上げる
+      if (document.hidden && voice.recording) stopVoice();
       if (document.hidden && cur) {
         if (!video.paused) video.pause();
         flushDrawings();
