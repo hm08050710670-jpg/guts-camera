@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var APP_VERSION = '1.6.2';
+  var APP_VERSION = '1.7.0';
 
   var CLUBS = ['ドライバー', '3W', '5W', 'UT', '5I', '6I', '7I', '8I', '9I', 'PW', 'AW', 'SW', 'パター', 'その他'];
   var COLORS = [
@@ -360,6 +360,7 @@
       fillMsg($('cam-msg'), null);
       $('cam-rec').disabled = false;
       updateCamInfo();
+      setupFocus(track);
       setupLens(track, token);
     }).catch(function (err) {
       if (token !== cam.token) return;
@@ -619,10 +620,77 @@
       e.preventDefault();
       setZoom(pinch.z0 * dist(e.touches) / pinch.d0, true);
     }, { passive: false });
-    function end(e) { if (e.touches.length < 2) pinch = null; }
+    var pinchedAt = 0;
+    function end(e) { if (e.touches.length < 2) { if (pinch) pinchedAt = Date.now(); pinch = null; } }
     el.addEventListener('touchend', end);
     el.addEventListener('touchcancel', end);
+    // 1本指のタップ：その位置にピントを合わせる（つまむ操作の直後は無視する）
+    el.addEventListener('click', function (e) {
+      if (Date.now() - pinchedAt < 400) return;
+      focusAt(e.clientX, e.clientY);
+    });
   })();
+
+  /* ---------- タップでピント合わせ ----------
+     プレビューをタップした位置にピント（と明るさ）を合わせる。
+     ブラウザのカメラ機能が「位置を指定したピント合わせ」に対応している端末でだけ働く。
+     対応していない端末では、カメラの自動ピントのままになる（その旨を一度だけ案内する）。 */
+  var focusNoticeShown = false, focusTimer = 0;
+  function pickMode(list) {
+    if (!list || !list.indexOf) return null;
+    if (list.indexOf('single-shot') >= 0) return 'single-shot';
+    if (list.indexOf('continuous') >= 0) return 'continuous';
+    return null;
+  }
+  function setupFocus(track) {
+    cam.focus = null;
+    $('cam-focus').hidden = true;
+    var caps = {}, sup = {};
+    try { caps = track && track.getCapabilities ? track.getCapabilities() : {}; } catch (e) {}
+    try { sup = navigator.mediaDevices.getSupportedConstraints ? navigator.mediaDevices.getSupportedConstraints() : {}; } catch (e) {}
+    var mode = pickMode(caps.focusMode);
+    cam.focusInfo = { modes: caps.focusMode ? Array.prototype.slice.call(caps.focusMode) : null, poi: !!sup.pointsOfInterest };
+    if (track && sup.pointsOfInterest && mode) cam.focus = { track: track, mode: mode, exposure: pickMode(caps.exposureMode) };
+  }
+  // プレビュー上の位置（画面の座標）を、映像に対する割合（0〜1）に直す。映像の外なら null
+  function camPoint(clientX, clientY) {
+    var vw = camVideo.videoWidth, vh = camVideo.videoHeight;
+    if (!vw || !vh) return null;
+    var r = camVideo.getBoundingClientRect();
+    var s = Math.min(r.width / vw, r.height / vh);
+    var w = vw * s, h = vh * s;
+    var centered = getComputedStyle(camVideo).objectPosition.indexOf('50% 50%') === 0;
+    var left = r.left + (r.width - w) / 2, top = centered ? r.top + (r.height - h) / 2 : r.top;
+    var x = (clientX - left) / w, y = (clientY - top) / h;
+    if (x < 0 || x > 1 || y < 0 || y > 1) return null;
+    return { x: x, y: y };
+  }
+  function focusAt(clientX, clientY) {
+    if (currentScreen !== 'camera' || !cam.stream || !$('cam-msg').hidden) return;
+    var p = camPoint(clientX, clientY);
+    if (!p) return;
+    if (!cam.focus) {
+      if (!focusNoticeShown) {
+        focusNoticeShown = true;
+        toast('この端末のブラウザは、タップでのピント合わせに対応していません。\nピントはカメラが自動で合わせます。', 4200);
+      }
+      return;
+    }
+    var set = { pointsOfInterest: [{ x: p.x, y: p.y }], focusMode: cam.focus.mode };
+    if (cam.focus.exposure) set.exposureMode = cam.focus.exposure;
+    var box = $('cam-focus'), sr = document.querySelector('.cam-stage').getBoundingClientRect();
+    box.style.left = (clientX - sr.left) + 'px';
+    box.style.top = (clientY - sr.top) + 'px';
+    box.hidden = false;
+    clearTimeout(focusTimer);
+    focusTimer = setTimeout(function () { box.hidden = true; }, 1400);
+    var pr;
+    try { pr = cam.focus.track.applyConstraints({ advanced: [set] }); } catch (e) { pr = Promise.reject(e); }
+    Promise.resolve(pr).catch(function () {
+      box.hidden = true;
+      toast('ピントを合わせられませんでした');
+    });
+  }
 
   function showCamError(err) {
     var name = err && err.name || '';
@@ -2202,6 +2270,8 @@
       var names = list.filter(function (d) { return d.kind === 'videoinput'; }).map(function (d) { return d.label || '（名前なし）'; });
       lines.push('カメラ：' + (names.length ? names.join('、') : 'なし'));
       if (cam.diag.label) lines.push('使用：' + cam.diag.label + ' / ズーム：' + (cam.diag.zoom ? cam.diag.zoom[0] + '〜' + cam.diag.zoom[1] + '（今 ' + cam.diag.zoom[2] + '）' : 'なし'));
+      if (cam.focusInfo) lines.push('ピント：' + (cam.focus ? 'タップ対応（' + cam.focus.mode + '）' : 'タップ非対応') +
+        ' / 方式：' + (cam.focusInfo.modes ? cam.focusInfo.modes.join(',') : 'なし') + ' / 位置指定：' + (cam.focusInfo.poi ? 'あり' : 'なし'));
       var c = cam.ctl;
       lines.push('ズーム操作：' + (c ? c.mode + ' ' + fmtZoom(c.min) + '〜' + fmtZoom(c.max) + '（このカメラ ' + fmtZoom(c.devMin) + '〜' + fmtZoom(c.devMax) + '）' : 'なし') +
         ' / 超広角：' + (cam.ultraId ? 'あり' : 'なし') + ' / 現在：' + fmtZoom(cam.zoom) + '×');

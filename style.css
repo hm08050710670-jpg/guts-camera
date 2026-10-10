@@ -282,6 +282,16 @@ svg { display: block; }
   pointer-events: none;
 }
 #cam-msg { padding-bottom: calc(150px + var(--sab)); }
+/* ピントを合わせた位置の目印（タップでのピント合わせに対応している端末だけ表示） */
+.cam-focus {
+  position: absolute;
+  width: 72px;
+  height: 72px;
+  margin: -36px 0 0 -36px;
+  border: 1.500px solid var(--accent);
+  border-radius: 4px;
+  pointer-events: none;
+}
 .stage-msg button + button { margin-top: -4px; }
 .stage-msg button.is-primary { background: var(--accent); color: #0B0B0B; }
 .cam-bottom {
