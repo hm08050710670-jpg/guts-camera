@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var APP_VERSION = '1.4.0';
+  var APP_VERSION = '1.4.1';
 
   var CLUBS = ['ドライバー', '3W', '5W', 'UT', '5I', '6I', '7I', '8I', '9I', 'PW', 'AW', 'SW', 'パター', 'その他'];
   var COLORS = [
@@ -993,16 +993,32 @@
   function seekTo(t) {
     if (!cur || !cur.ready) return;
     t = clamp(t, 0, cur.duration || 0);
-    if (video.seeking) seekWant = t;
-    else { seekWant = null; try { video.currentTime = t; } catch (e) {} }
+    // 前のシークが終わっていなければ、最後の指定だけを覚えておき、終わったときに移動する。
+    // シーク完了の通知が来ない場合に備えて、一定時間たったら待たずに移動する。
+    if (video.seeking && performance.now() - seekStartedAt < 600) {
+      seekWant = t;
+      clearTimeout(seekTimer);
+      seekTimer = setTimeout(flushSeek, 650);
+    } else {
+      seekWant = null;
+      setVideoTime(t);
+    }
     updateTimeUI(t);
   }
-  video.addEventListener('seeked', function () {
-    if (seekWant == null) return;
+  var seekStartedAt = 0, seekTimer = 0;
+  function setVideoTime(t) {
+    shownFresh = false;   // これ以降に表示の通知が来るまで、表示中のコマの時刻は当てにしない
+    seekStartedAt = performance.now();
+    try { video.currentTime = t; } catch (e) {}
+  }
+  function flushSeek() {
+    clearTimeout(seekTimer);
+    if (seekWant == null || !cur) return;
     var t = seekWant;
     seekWant = null;
-    if (Math.abs(video.currentTime - t) > 0.0005) { try { video.currentTime = t; } catch (e) {} }
-  });
+    if (Math.abs(video.currentTime - t) > 0.0005) setVideoTime(t);
+  }
+  video.addEventListener('seeked', flushSeek);
 
   function updateTimeUI(t) {
     var d = cur ? cur.duration : 0;
@@ -1050,7 +1066,7 @@
     rateCheck = null;
     if (cur.ready && !seekDragging && seekWant == null) updateTimeUI(video.currentTime);
   });
-  video.addEventListener('seeking', function () { rateCheck = null; fpsLast = null; });
+  video.addEventListener('seeking', function () { rateCheck = null; fpsLast = null; shownFresh = false; });
   video.addEventListener('durationchange', function () {
     if (cur && isFinite(video.duration) && video.duration > 0) {
       cur.duration = video.duration;
@@ -1118,17 +1134,20 @@
   function stepFrame(dir) {
     if (!cur || !cur.ready) return;
     if (!video.paused) video.pause();
-    var f = currentFps();
+    var f = currentFps(), d = cur.duration || 0;
+    var pending = seekWant != null || video.seeking;
     var base = seekWant != null ? seekWant : video.currentTime;
+    // 基本：今の時刻が入っているコマの、1つ先（前）のコマの中央へ移動する。
+    // 必ず今の時刻から半コマ分以上は動くので、同じ位置に止まり続けることがない。
     var n = Math.floor(base * f + 0.001);
-    // 実際に表示されているコマの時刻を取得できる場合は、それを基準にする
-    if (seekWant == null && !video.seeking && shownTime != null && Math.abs(shownTime - base) < 1.5 / f) {
-      n = Math.round(shownTime * f);
+    var t = (n + dir + 0.5) / f;
+    // 表示中のコマの開始時刻が確かに分かっているときは、そのコマを確実に越える位置にする
+    // （再生を止めた直後など、時刻と表示が1コマずれている場合の空振りを防ぐ）
+    if (!pending && shownFresh && shownTime != null && Math.abs(shownTime - base) < 2 / f) {
+      if (dir > 0) t = Math.max(t, shownTime + 1.5 / f);
+      else t = Math.min(t, shownTime - 0.5 / f);
     }
-    var maxN = Math.max(0, Math.ceil((cur.duration || 0) * f) - 1);
-    n = clamp(n + dir, 0, maxN);
-    // コマの中央の時刻を指定して、境界の誤差で前後のコマに入らないようにする
-    seekTo(Math.min((n + 0.5) / f, cur.duration || 0));
+    seekTo(clamp(t, 0, d));
   }
   function bindHold(btn, dir) {
     var timer = 0, iv = 0;
@@ -1137,10 +1156,12 @@
       timer = 0; iv = 0;
       btn.classList.remove('is-held');
     }
+    var lastDown = 0;
     btn.addEventListener('pointerdown', function (e) {
       if (e.button) return;
       e.preventDefault();
       stop();
+      lastDown = Date.now();
       btn.classList.add('is-held');
       stepFrame(dir);
       timer = setTimeout(function () {
@@ -1149,6 +1170,10 @@
     });
     ['pointerup', 'pointercancel', 'pointerleave'].forEach(function (ev) {
       btn.addEventListener(ev, stop);
+    });
+    // 押したことがポインターイベントで届かなかった場合だけ、クリックで1コマ送る
+    btn.addEventListener('click', function () {
+      if (Date.now() - lastDown > 1500) stepFrame(dir);
     });
     btn.addEventListener('contextmenu', function (e) { e.preventDefault(); });
     btn.addEventListener('keydown', function (e) {
@@ -1223,9 +1248,11 @@
   }
   // 画面の動画を再生している間も、フレーム間隔を集めて推定を更新する
   var fpsLast = null, fpsDeltas = [], fpsCount = 0;
-  var shownTime = null;   // 最後に画面へ表示されたコマの時刻
+  var shownTime = null;    // 最後に画面へ表示されたコマの時刻
+  var shownFresh = false;  // shownTime が「いま表示中のコマ」のものだと確かに言えるか
   function mainFrame(now, md) {
     shownTime = md.mediaTime;
+    shownFresh = !video.seeking;
     if (cur && cur.ready && !video.paused && !video.seeking) {
       if (fpsLast != null) {
         var d = md.mediaTime - fpsLast;
@@ -1242,7 +1269,7 @@
     video.requestVideoFrameCallback(mainFrame);
   }
   if (HAS_RVFC) video.requestVideoFrameCallback(mainFrame);
-  video.addEventListener('emptied', function () { fpsLast = null; fpsDeltas = []; fpsCount = 0; shownTime = null; });
+  video.addEventListener('emptied', function () { fpsLast = null; fpsDeltas = []; fpsCount = 0; shownTime = null; shownFresh = false; });
 
   function updateFpsChip() {
     var el = $('fps-chip');
