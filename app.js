@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var APP_VERSION = '1.9.2';
+  var APP_VERSION = '1.10.0';
 
   var CLUBS = ['ドライバー', '3W', '5W', 'UT', '5I', '6I', '7I', '8I', '9I', 'PW', 'AW', 'SW', 'パター', 'その他'];
   var COLORS = [
@@ -690,6 +690,69 @@
     var t1 = svgEl('text', { x: x0 + 8, y: yHead - 6 }); t1.textContent = '頭';
     var t2 = svgEl('text', { x: x0 + 8, y: yFeet - 6 }); t2.textContent = '足元';
     svg.appendChild(t1); svg.appendChild(t2);
+    // 構えの目安（体の枠・手元の丸・バッテン）は、後方からの撮影・縦画面のときだけ出す
+    if (!centered && captureDir === '後方') drawPose(svg, x0, y0, x1, yb);
+  }
+
+  /* ---------- 構えの目安（後方から撮影するとき） ----------
+     ・黄色い枠：構えたときに体を入れる目安
+     ・赤い丸  ：手元（グリップの先とシャフトの境目）を合わせる目印
+     ・赤いバッテン：範囲の下の両角から、赤い丸の中心を通る2本の線（中心が丸の中に来る）
+     位置は、ガイド線の範囲に置いた「基準の箱」（幅：高さ ＝ POSE_ASPECT）に対する割合で決めている。 */
+  var POSE_ASPECT = 0.66;            // 基準の箱の 幅÷高さ
+  var POSE_HANDS = [0.5455, 0.5997]; // 赤い丸の中心
+  var POSE_HANDS_R = 0.049;          // 赤い丸の半径（箱の幅に対する割合）
+  var POSE_BODY = [                  // 黄色い枠が通る点（首の後ろから時計回り）
+    [0.467, 0.379], [0.485, 0.350], [0.515, 0.322], [0.596, 0.311], [0.668, 0.335], [0.693, 0.385],
+    [0.672, 0.428], [0.615, 0.447], [0.598, 0.470], [0.597, 0.540], [0.598, 0.615], [0.592, 0.640],
+    [0.520, 0.646], [0.492, 0.660], [0.505, 0.710], [0.520, 0.745], [0.560, 0.757], [0.588, 0.775],
+    [0.591, 0.800], [0.580, 0.812], [0.395, 0.812], [0.388, 0.795], [0.356, 0.712], [0.330, 0.634],
+    [0.316, 0.556], [0.309, 0.517], [0.337, 0.490], [0.386, 0.445], [0.429, 0.406]
+  ];
+  function drawPose(svg, x0, y0, x1, yb) {
+    var W = x1 - x0, H = yb - y0;
+    // 基準の箱を、範囲の上端・左右の中央に、はみ出さない最大の大きさで置く
+    var bw = Math.min(W, H * POSE_ASPECT), bh = bw / POSE_ASPECT;
+    var bx = x0 + (W - bw) / 2;
+    function pt(p) { return [bx + p[0] * bw, y0 + p[1] * bh]; }
+    function f(n) { return Math.round(n * 10) / 10; }
+    function add(tag, attrs, cls, name) {
+      var shade = {}, k;
+      for (k in attrs) shade[k] = attrs[k];
+      shade['class'] = 'pose-shade';
+      svg.appendChild(svgEl(tag, shade));
+      attrs['class'] = cls;
+      attrs['data-p'] = name;
+      svg.appendChild(svgEl(tag, attrs));
+    }
+    var c = pt(POSE_HANDS), r = POSE_HANDS_R * bw;
+
+    // バッテン：下の両角から丸の中心を通り、反対側の端（または上端）まで
+    [[x0, yb, x1], [x1, yb, x0]].forEach(function (g, i) {
+      var dx = c[0] - g[0], dy = c[1] - g[1];
+      var t = Math.min((g[2] - g[0]) / dx, (y0 - g[1]) / dy);
+      add('line', { x1: f(g[0]), y1: f(g[1]), x2: f(g[0] + dx * t), y2: f(g[1] + dy * t) }, 'pose-x', 'x' + (i + 1));
+    });
+
+    // 体の枠：点をなめらかな曲線でつなぐ
+    var P = POSE_BODY.map(pt), n = P.length, d = 'M' + f(P[0][0]) + ' ' + f(P[0][1]);
+    for (var i = 0; i < n; i++) {
+      var p0 = P[(i + n - 1) % n], p1 = P[i], p2 = P[(i + 1) % n], p3 = P[(i + 2) % n];
+      d += ' C' + f(p1[0] + (p2[0] - p0[0]) / 6) + ' ' + f(p1[1] + (p2[1] - p0[1]) / 6) +
+        ' ' + f(p2[0] - (p3[0] - p1[0]) / 6) + ' ' + f(p2[1] - (p3[1] - p1[1]) / 6) +
+        ' ' + f(p2[0]) + ' ' + f(p2[1]);
+    }
+    add('path', { d: d + ' Z' }, 'pose-body', 'body');
+
+    // 手元の丸
+    add('circle', { cx: f(c[0]), cy: f(c[1]), r: f(r) }, 'pose-hands', 'hands');
+
+    var feet = pt([0.4875, 0.812]);
+    var tb = svgEl('text', { x: f(feet[0]), y: f(feet[1] + 16), 'text-anchor': 'middle', 'class': 'pose-text-body' });
+    tb.textContent = 'この枠に体を合わせる';
+    var th = svgEl('text', { x: f(c[0] + r + 6), y: f(c[1] + 4), 'class': 'pose-text-hands' });
+    th.textContent = '手元';
+    svg.appendChild(tb); svg.appendChild(th);
   }
 
   /* ---------- タップでピント合わせ ----------

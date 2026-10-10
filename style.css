@@ -273,6 +273,13 @@ svg { display: block; }
 .cam-guide { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 .cam-guide line { stroke: rgba(255, 255, 255, 0.72); stroke-width: 1; }
 .cam-guide line.shade { stroke: rgba(0, 0, 0, 0.3); stroke-width: 2.500; }
+/* 構えの目安（後方から撮影するとき）：黄色い体の枠・赤い手元の丸・赤いバッテン */
+.cam-guide .pose-shade { fill: none; stroke: rgba(0, 0, 0, 0.38); stroke-width: 5; stroke-linecap: round; stroke-linejoin: round; }
+.cam-guide line.pose-x { stroke: #FF3B30; stroke-width: 2.500; stroke-linecap: round; }
+.cam-guide .pose-body { fill: none; stroke: #FFE600; stroke-width: 2.500; stroke-linejoin: round; }
+.cam-guide .pose-hands { fill: none; stroke: #FF3B30; stroke-width: 3; }
+.cam-guide text.pose-text-body { fill: #FFE600; }
+.cam-guide text.pose-text-hands { fill: #FF6A60; }
 .cam-guide text { fill: rgba(255, 255, 255, 0.9); font-size: 11px; font-weight: 700; paint-order: stroke; stroke: rgba(0, 0, 0, 0.55); stroke-width: 2.500px; }
 .cam-timer {
   flex: none;
