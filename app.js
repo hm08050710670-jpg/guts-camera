@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var APP_VERSION = '1.6.0';
+  var APP_VERSION = '1.6.1';
 
   var CLUBS = ['ドライバー', '3W', '5W', 'UT', '5I', '6I', '7I', '8I', '9I', 'PW', 'AW', 'SW', 'パター', 'その他'];
   var COLORS = [
@@ -1754,7 +1754,15 @@
 
   var drag = null;
   overlay.addEventListener('pointerdown', function (e) {
-    if (!cur || cur.mode !== 'draw' || drag || e.button) return;
+    if (!cur || drag || e.button) return;
+    if (cur.mode !== 'draw') {
+      // 再生モード：引いてある線や枠に触れたら、描画モードに切り替えて、そのまま選んで動かせるようにする。
+      // 何もないところのタップは、今までどおり操作パネルの表示切り替えになる。
+      var hitId = e.target.getAttribute && e.target.getAttribute('data-id');
+      if (!hitId || !cur.ready || cur.hidden || !findShape(hitId)) return;
+      setMode('draw');
+      screenAn.classList.remove('panels-hidden');
+    }
     e.preventDefault();
     e.stopPropagation();
     var p = toNorm(e);
