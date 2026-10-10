@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var APP_VERSION = '1.3.0';
+  var APP_VERSION = '1.3.1';
 
   var CLUBS = ['ドライバー', '3W', '5W', 'UT', '5I', '6I', '7I', '8I', '9I', 'PW', 'AW', 'SW', 'パター', 'その他'];
   var COLORS = [
@@ -954,12 +954,9 @@
     var sw = stage.clientWidth, sh = stage.clientHeight;
     var vw = video.videoWidth || cur.meta.w, vh = video.videoHeight || cur.meta.h;
     if (!sw || !sh || !vw || !vh) return;
-    // 縦画面（操作を動画に重ねる表示）の描画モードでは、上の表示と下のパネルの間に動画全体を収める。
-    // 線の端や足元がボタンの下に入って触れなくなるのを防ぐため。
+    // 縦画面では上の表示と下の操作パネルを動画に重ねる。再生モードでも描画モードでも同じ大きさで表示する。
     var ov = overlayInsets();
-    var availH = sh;
-    if (ov && cur.mode === 'draw') availH = Math.max(120, sh - ov.top - ov.bottom);
-    var s = Math.min(sw / vw, availH / vh);
+    var s = Math.min(sw / vw, sh / vh);
     var w = Math.max(1, Math.round(vw * s)), h = Math.max(1, Math.round(vh * s));
     var top;
     if (!ov) top = (sh - h) / 2;
@@ -1483,7 +1480,6 @@
     }
     updateToolsUI();
     renderShapes();
-    fitFrame();
   }
 
   function chooseTool(tool) {
@@ -1507,6 +1503,20 @@
     cur.selected = null;
     updateToolsUI();
     renderShapes();
+  }
+
+  // 映像のうち、上の表示と下の操作パネルに隠れていない縦の範囲（0〜1）。
+  // 新しく引く縦線の上下の丸が、ボタンの下に入って触れなくならないようにするために使う。
+  function visibleRangeY() {
+    var y1 = 0.03, y2 = 0.97;
+    var ov = overlayInsets();
+    if (ov && cur && cur.fh) {
+      var ft = parseFloat(frame.style.top) || 0;
+      var a = Math.max(y1, (ov.top - ft) / cur.fh + 0.02);
+      var b = Math.min(y2, (stage.clientHeight - ov.bottom - ft) / cur.fh - 0.03);
+      if (b - a >= 0.2) { y1 = a; y2 = b; }
+    }
+    return [y1, y2];
   }
 
   function toNorm(e) {
@@ -1538,7 +1548,8 @@
     }
     if (cur.tool === 'sway') {
       var before = snapshot();
-      var v = { id: uid(), type: 'vline', x: p.x, y1: 0.03, y2: 0.97, color: cur.color, width: cur.width };
+      var vr = visibleRangeY();
+      var v = { id: uid(), type: 'vline', x: p.x, y1: vr[0], y2: vr[1], color: cur.color, width: cur.width };
       cur.shapes.push(v);
       cur.selected = v.id;
       drag = { pid: e.pointerId, place: 'sway', id: v.id, before: before };
