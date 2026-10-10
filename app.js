@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var APP_VERSION = '1.9.0';
+  var APP_VERSION = '1.9.1';
 
   var CLUBS = ['ドライバー', '3W', '5W', 'UT', '5I', '6I', '7I', '8I', '9I', 'PW', 'AW', 'SW', 'パター', 'その他'];
   var COLORS = [
@@ -1266,7 +1266,7 @@
   var voice = {
     recording: false, starting: false, rec: null, chunks: [], mic: null, tracks: [],
     canvas: null, ctx: null, raf: 0, timer: 0, stopTimer: 0, t0: 0, secs: 0, lastDraw: 0,
-    discard: false, auto: false, hasAudio: false, result: null
+    discard: false, auto: false, byTap: false, hasAudio: false, result: null
   };
 
   function voiceSupported() {
@@ -1282,7 +1282,7 @@
   }
 
   function toggleVoice() {
-    if (voice.recording) { stopVoice(); return; }
+    if (voice.recording) { voice.byTap = true; stopVoice(); return; }
     if (voice.starting || voice.rec || !cur || !cur.ready) return;   // voice.rec：前の録音の仕上げ中
     if (!voiceSupported()) {
       ask('この端末では録音できません', '解説動画を作るための機能が、このブラウザにはありません。iOSを最新にしてからお試しください。', [{ label: 'OK', value: 1, kind: 'primary' }]);
@@ -1350,6 +1350,7 @@
 
     voice.recording = true;
     voice.auto = false;
+    voice.byTap = false;
     voice.hasAudio = !!(mic && mic.getAudioTracks().length);
     voice.t0 = performance.now();
     voice.lastDraw = 0;
@@ -1489,26 +1490,58 @@
     var res = {
       blob: blob, secs: voice.secs, hasAudio: !!voice.hasAudio, thumb: voiceThumb(),
       w: voice.canvas ? voice.canvas.width : 0, h: voice.canvas ? voice.canvas.height : 0,
-      auto: !!voice.auto, kept: false, savedApp: false
+      auto: !!voice.auto, byTap: !!voice.byTap, kept: false, savedApp: false
     };
     var discard = voice.discard;
     voice.discard = false;
     cleanupVoice();
     if (discard || !cur) return;
     if (!blob.size || res.secs < 1) { toast('録音が短すぎます。もう一度お試しください'); return; }
-    openVoiceSheet(res);
-  }
-
-  function openVoiceSheet(res) {
     var d = new Date();
     res.name = 'guts-camera-' + todayStr(d).replace(/-/g, '') + '-' + pad2(d.getHours()) + pad2(d.getMinutes()) + pad2(d.getSeconds()) +
       (/webm/.test(res.blob.type) ? '.webm' : '.mp4');
     res.url = URL.createObjectURL(res.blob);
+    if (voice.result) dropVoiceResult(voice.result);   // 前の結果が残っていれば片付ける
     voice.result = res;
     if (!video.paused) video.pause();
+    // 終了ボタンを押して終えたときは、確認の画面をはさまず、そのまま保存先を選ぶ画面（iPhoneの共有画面）を出す。
+    // 出せなかった場合や、保存先を選ばずに閉じた場合は、動画が消えないように確認の画面を出す。
+    var file = res.byTap ? voiceFile(res) : null;
+    if (!file) { openVoiceSheet(res, ''); return; }
+    var p;
+    try { p = navigator.share({ files: [file] }); } catch (e) { p = Promise.reject(e); }
+    Promise.resolve(p).then(function () {
+      if (voice.result !== res) return;
+      res.kept = true;
+      dropVoiceResult(res);
+      toast('解説動画を書き出しました');
+    }, function (err) {
+      if (voice.result !== res || !$('voice-sheet').hidden) return;
+      openVoiceSheet(res, err && err.name === 'AbortError' ? 'cancel' : 'fail');
+    });
+  }
+
+  // 共有画面に渡すファイルを作る（共有に対応していない環境では null）
+  function voiceFile(res) {
+    var file = null;
+    try { file = new File([res.blob], res.name, { type: res.blob.type }); } catch (e) {}
+    try {
+      if (file && navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) return file;
+    } catch (e2) {}
+    return null;
+  }
+
+  function dropVoiceResult(res) {
+    if (res && res.url) setTimeout(function () { URL.revokeObjectURL(res.url); }, 0);
+    if (voice.result === res) voice.result = null;
+  }
+
+  // why: ''（そのまま表示）/ 'cancel'（保存先を選ばずに閉じた）/ 'fail'（共有画面を出せなかった）
+  function openVoiceSheet(res, why) {
     var sec = Math.round(res.secs);
     $('voice-info').textContent = '長さ ' + Math.floor(sec / 60) + ':' + pad2(sec % 60) + '・約' + fmtSize(res.blob.size) +
-      (res.hasAudio ? '' : '・声なし') + (res.auto ? '\n上限の' + (VOICE_MAX_SEC / 60) + '分になったため、自動で終了しました。' : '');
+      (res.hasAudio ? '' : '・声なし') + (res.auto ? '\n上限の' + (VOICE_MAX_SEC / 60) + '分になったため、自動で終了しました。' : '') +
+      (why === 'cancel' ? '\n保存先を選ばなかったため、まだ保存されていません。' : '');
     var keep = $('voice-keep');
     keep.disabled = false;
     keep.textContent = 'アプリに保存（マイスイング）';
@@ -1527,12 +1560,9 @@
   function shareVoice() {
     var r = voice.result;
     if (!r) return;
-    var file = null;
-    try { file = new File([r.blob], r.name, { type: r.blob.type }); } catch (e) {}
-    var ok = false;
-    try { ok = !!(file && navigator.share && navigator.canShare && navigator.canShare({ files: [file] })); } catch (e2) {}
+    var file = voiceFile(r);
     try { $('voice-preview').pause(); } catch (e3) {}
-    if (ok) {
+    if (file) {
       navigator.share({ files: [file] }).then(function () { r.kept = true; }, function (err) {
         if (err && err.name === 'AbortError') return;   // 共有画面を閉じただけ
         toast('共有できませんでした。「アプリに保存」をお試しください', 3600);
@@ -1603,7 +1633,7 @@
       try { pv.pause(); } catch (e) {}
       pv.removeAttribute('src');
       try { pv.load(); } catch (e2) {}
-      if (r) setTimeout(function () { URL.revokeObjectURL(r.url); }, 0);
+      dropVoiceResult(r);
       voice.result = null;
       $('voice-sheet').hidden = true;
     }
