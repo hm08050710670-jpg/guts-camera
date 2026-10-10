@@ -178,6 +178,7 @@ svg { display: block; }
 .home-foot { padding: 28px 4px 0; }
 .foot-line { margin: 0 0 8px; color: var(--sub); font-size: 12px; line-height: 1.6; }
 .foot-ver { margin: 16px 0 0; color: #5c5c60; font-size: 11px; letter-spacing: 0.08em; }
+.diag-strip { position: fixed; left: 0; right: 0; top: 100%; z-index: 99; height: 160px; background: #FF00FF; color: #000; font-size: 14px; font-weight: 700; text-align: center; line-height: 40px; }
 
 /* ---------- 撮影・取り込み ---------- */
 .field-label { margin: 8px 2px 8px; color: var(--sub); font-size: 13px; font-weight: 600; }
@@ -744,18 +745,89 @@ svg { display: block; }
   .t-btn { font-size: 12px; }
 }
 
-/* 縦に余裕のある端末：ツールを2段に並べて、横スクロールなしで全部押せるようにする */
-@media (orientation: portrait) and (min-height: 740px) and (min-width: 360px) {
-  .tools-wrap { -webkit-mask-image: none; mask-image: none; }
-  .tools { padding-right: max(12px, var(--sar)); overflow: visible; }
-  #tools-main { display: grid; grid-template-columns: repeat(20, 1fr); }
-  #tools-main .tool { min-width: 0; padding: 0 2px; grid-column: span 4; }
-  #tools-main .tool.mode, #tools-main .tool[data-tool] { grid-column: span 5; }
-  #tools-main .tool-sep { display: none; }
-  #tools-style { flex-wrap: wrap; row-gap: 6px; }
-  #tools-style .tool-sep:last-of-type { display: none; }
-  #tools-style .widths { flex-basis: 100%; }
-  #tools-style .widths button { flex: 1; }
+/* 縦画面：動画を画面いっぱいに表示し、上の表示と下の操作パネルを動画の上に重ねる。
+   操作パネルは小さくまとめて画面の下端に寄せる（再生モードで動画をタップすると隠せる）。 */
+@media (orientation: portrait) {
+  .analyze .stage { position: absolute; left: 0; right: 0; top: var(--sat); bottom: 0; }
+  .analyze .an-top {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    z-index: 3;
+    padding-bottom: 16px;
+    background: linear-gradient(to bottom, var(--bg) 0, var(--bg) var(--sat), rgba(0, 0, 0, 0.62) var(--sat), rgba(0, 0, 0, 0) 100%);
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+    pointer-events: none;   /* ボタン以外の部分は、下の動画をそのまま触れるようにする */
+  }
+  .analyze .an-top > button { pointer-events: auto; }
+  .analyze .draw-hint { top: 62px; }
+  .analyze .an-controls {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 3;
+    padding: 4px max(10px, var(--sar)) calc(6px + var(--sab)) max(10px, var(--sal));
+    background: rgba(11, 11, 11, 0.5);
+  }
+  .analyze .seek { height: 28px; }
+  .analyze .seek-thumb { width: 14px; height: 14px; margin: -7px 0 0 -7px; }
+  .analyze .time { min-width: 0; color: #D8D8D8; font-size: 11px; }
+
+  .analyze .transport { grid-template-columns: 1fr 64px 1fr; gap: 8px; margin-top: 0; }
+  .analyze .t-btn { height: 40px; border-radius: 12px; background: rgba(28, 28, 30, 0.66); font-size: 12px; }
+  .analyze .t-btn:active, .analyze .t-btn.is-held { background: var(--card-2); }
+  .analyze .t-btn svg { width: 18px; height: 18px; }
+  .analyze .t-btn.play { height: 40px; border-radius: 20px; background: var(--accent); }
+  .analyze .t-btn.play:active { background: #C9E600; }
+  .analyze .t-btn.play svg { width: 22px; height: 22px; }
+
+  .analyze .speed-row { gap: 6px; margin-top: 6px; }
+  .analyze .speeds { gap: 5px; }
+  .analyze .speeds button { height: 28px; border-radius: 9px; background: rgba(28, 28, 30, 0.66); font-size: 12px; }
+  .analyze .speeds button.is-on { background: var(--accent); }
+  .analyze .fps-chip {
+    height: 28px;
+    padding: 0 8px;
+    border-color: rgba(255, 255, 255, 0.22);
+    border-radius: 9px;
+    background: rgba(28, 28, 30, 0.5);
+    color: #D8D8D8;
+    font-size: 10px;
+    white-space: nowrap;
+  }
+
+  .analyze .tools-wrap {
+    margin: 6px calc(-1 * max(10px, var(--sar))) 0 calc(-1 * max(10px, var(--sal)));
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+  .analyze .tools { gap: 4px; padding: 0 max(10px, var(--sar)) 0 max(10px, var(--sal)); overflow: visible; }
+  .analyze .tool { height: 38px; gap: 1px; border-radius: 10px; background: rgba(28, 28, 30, 0.66); font-size: 8.500px; }
+  .analyze .tool:active { background: var(--card-2); }
+  .analyze .tool svg { width: 18px; height: 18px; }
+  .analyze .tool.mode[aria-pressed="true"] { background: var(--accent); }
+  .analyze .tool-sep { display: none; }
+  .analyze #tools-main .tool { flex: 1 1 0; min-width: 0; padding: 0; }
+  /* 幅が狭いので短いラベルを表示する（横画面では元のラベル） */
+  .analyze #tools-main .tool span[data-short] { font-size: 0; }
+  .analyze #tools-main .tool span[data-short]::after { content: attr(data-short); font-size: 8.500px; }
+
+  .analyze #tools-style { align-items: center; gap: 6px; overflow-x: auto; }
+  .analyze #tools-style .tool { flex: none; min-width: 42px; padding: 0 4px; }
+  .analyze .swatches { gap: 6px; }
+  .analyze .swatches button { width: 30px; height: 30px; border-width: 2px; }
+  .analyze .widths { gap: 4px; }
+  .analyze .widths button { width: 42px; height: 38px; gap: 4px; border-radius: 10px; background: rgba(28, 28, 30, 0.66); font-size: 8.500px; }
+  .analyze .widths button i { width: 22px; }
+}
+@media (orientation: portrait) and (max-width: 360px) {
+  .analyze .speeds { gap: 3px; }
+  .analyze .speeds button { font-size: 10.500px; }
+  .analyze .fps-chip { padding: 0 5px; font-size: 9px; }
+  .analyze .t-btn { font-size: 11px; }
+  .analyze #tools-main .tool span[data-short]::after { font-size: 7.500px; }
 }
 
 /* 横画面：動画を左、操作を右にまとめて動画を覆わない */

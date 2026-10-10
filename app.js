@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var APP_VERSION = '1.1.2';
+  var APP_VERSION = '1.2.0';
 
   var CLUBS = ['ドライバー', '3W', '5W', 'UT', '5I', '6I', '7I', '8I', '9I', 'PW', 'AW', 'SW', 'パター', 'その他'];
   var COLORS = [
@@ -850,16 +850,41 @@
     var sw = stage.clientWidth, sh = stage.clientHeight;
     var vw = video.videoWidth || cur.meta.w, vh = video.videoHeight || cur.meta.h;
     if (!sw || !sh || !vw || !vh) return;
-    var s = Math.min(sw / vw, sh / vh);
+    // 縦画面（操作を動画に重ねる表示）の描画モードでは、上の表示と下のパネルの間に動画全体を収める。
+    // 線の端や足元がボタンの下に入って触れなくなるのを防ぐため。
+    var ov = overlayInsets();
+    var availH = sh;
+    if (ov && cur.mode === 'draw') availH = Math.max(120, sh - ov.top - ov.bottom);
+    var s = Math.min(sw / vw, availH / vh);
     var w = Math.max(1, Math.round(vw * s)), h = Math.max(1, Math.round(vh * s));
+    var top;
+    if (!ov) top = (sh - h) / 2;
+    else {
+      var free = sh - ov.top - ov.bottom;
+      // 間に収まるなら間の中央に、収まらないなら上に寄せて下のパネルに隠れる部分を減らす
+      top = h <= free ? ov.top + (free - h) / 2 : Math.max(0, sh - ov.bottom - h);
+    }
     frame.style.width = w + 'px';
     frame.style.height = h + 'px';
     frame.style.left = Math.round((sw - w) / 2) + 'px';
-    frame.style.top = Math.round((sh - h) / 2) + 'px';
+    frame.style.top = Math.round(top) + 'px';
     cur.fw = w;
     cur.fh = h;
     overlay.setAttribute('viewBox', '0 0 ' + w + ' ' + h);
     renderShapes();
+  }
+
+  // 縦画面では上の表示と下の操作パネルを動画に重ねている。その重なりの高さを返す（横画面では null）。
+  var overlayTop = 0, overlayBottom = 0;
+  function overlayInsets() {
+    if (getComputedStyle(stage).position !== 'absolute') return null;
+    var sr = stage.getBoundingClientRect();
+    var tr = document.querySelector('.an-top').getBoundingClientRect();
+    var cr = $('an-controls').getBoundingClientRect();
+    // パネルを隠しているときは、最後に測った高さを使う（表示切り替えで動画が動かないように）
+    if (tr.height > 0) overlayTop = Math.max(0, tr.bottom - sr.top - 16);
+    if (cr.height > 0) overlayBottom = Math.max(0, sr.bottom - cr.top);
+    return { top: overlayTop, bottom: overlayBottom };
   }
 
   /* ---------- 再生・シーク ---------- */
@@ -1323,6 +1348,7 @@
     $('tool-undo').classList.toggle('is-dim', cur.history.length === 0);
     $('tool-hide').setAttribute('aria-pressed', cur.hidden ? 'true' : 'false');
     $('tool-hide-label').textContent = cur.hidden ? 'すべて表示' : 'すべて非表示';
+    $('tool-hide-label').setAttribute('data-short', cur.hidden ? '表示' : '非表示');
     var color = sel ? sel.color : cur.color;
     var width = sel ? (sel.width || 3.5) : cur.width;
     $('style-dot').style.fill = color;
@@ -1353,6 +1379,7 @@
     }
     updateToolsUI();
     renderShapes();
+    fitFrame();
   }
 
   function chooseTool(tool) {
@@ -1766,8 +1793,66 @@
     });
   }
 
+  /* ==========================================================
+     画面下の余白の補正と診断
+     ホーム画面から起動したとき、iOS側で表示領域が画面より短くなり、
+     下に余白ができる場合がある。その場合はホームバー用の余白（下のセーフエリア）を
+     重ねて取らないようにして、ボタンを下に寄せる。
+     ========================================================== */
+  function safeInsets() {
+    var d = document.createElement('div');
+    d.style.cssText = 'position:fixed;left:0;top:0;visibility:hidden;pointer-events:none;' +
+      'padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px)';
+    document.body.appendChild(d);
+    var c = getComputedStyle(d);
+    var r = { top: parseFloat(c.paddingTop) || 0, right: parseFloat(c.paddingRight) || 0, bottom: parseFloat(c.paddingBottom) || 0, left: parseFloat(c.paddingLeft) || 0 };
+    document.body.removeChild(d);
+    return r;
+  }
+  function isStandalone() {
+    return navigator.standalone === true || !!(window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+  }
+  function bottomGap() {
+    if (!isStandalone() || !window.screen) return 0;
+    var root = document.documentElement;
+    var portrait = root.clientHeight >= root.clientWidth;
+    var full = portrait ? Math.max(screen.width, screen.height) : Math.min(screen.width, screen.height);
+    var gap = full - root.clientHeight;
+    return gap >= 20 && gap <= 120 ? gap : 0;
+  }
+  function applyViewportFix() {
+    var root = document.documentElement;
+    var gap = bottomGap();
+    if (gap) root.style.setProperty('--sab', Math.max(0, safeInsets().bottom - gap) + 'px');
+    else root.style.removeProperty('--sab');
+  }
+  function showDiag() {
+    var root = document.documentElement, ins = safeInsets(), vv = window.visualViewport;
+    var strip = document.createElement('div');
+    strip.className = 'diag-strip';
+    strip.textContent = 'TEST';
+    document.body.appendChild(strip);
+    var lines = [
+      'バージョン：' + APP_VERSION,
+      '画面：' + screen.width + '×' + screen.height,
+      '表示領域：' + root.clientWidth + '×' + root.clientHeight,
+      'inner：' + window.innerWidth + '×' + window.innerHeight + (vv ? ' / vv：' + Math.round(vv.width) + '×' + Math.round(vv.height) : ''),
+      '余白（上/右/下/左）：' + [ins.top, ins.right, ins.bottom, ins.left].join(' / '),
+      'ホーム画面から起動：' + (isStandalone() ? 'はい' : 'いいえ'),
+      '下の余白：' + bottomGap() + ' / 補正：' + (root.style.getPropertyValue('--sab') || 'なし'),
+      navigator.userAgent.replace(/^Mozilla\/5\.0 /, '').slice(0, 90)
+    ];
+    ask('診断情報', lines.join('\n'), [{ label: '閉じる', value: 1, kind: 'primary' }]).then(function () {
+      if (strip.parentNode) strip.parentNode.removeChild(strip);
+    });
+  }
+
   function init() {
     $('app-version').textContent = 'v' + APP_VERSION;
+    applyViewportFix();
+    window.addEventListener('resize', applyViewportFix);
+    window.addEventListener('orientationchange', function () { setTimeout(applyViewportFix, 300); });
+    document.querySelector('.foot-ver').addEventListener('click', showDiag);
     fillClubs();
     fillSwatches();
 
@@ -1846,7 +1931,10 @@
       screenAn.classList.toggle('panels-hidden', hide);
       if (hide) toast('動画をタップすると操作パネルを表示します', 1800);
     });
-    if (window.ResizeObserver) new ResizeObserver(fitFrame).observe(stage);
+    if (window.ResizeObserver) {
+      new ResizeObserver(fitFrame).observe(stage);
+      new ResizeObserver(fitFrame).observe($('an-controls'));
+    }
     window.addEventListener('resize', fitFrame);
     window.addEventListener('orientationchange', function () { setTimeout(fitFrame, 250); });
 
