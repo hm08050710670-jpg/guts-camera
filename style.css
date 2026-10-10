@@ -536,10 +536,12 @@ svg { display: block; }
   padding: calc(var(--sat) + 4px) max(8px, var(--sar)) 4px max(8px, var(--sal));
   background: var(--bg);
 }
+/* 動画のタイトルは表示しない（ボタンを大きくするため）。左右のボタンの間を空ける役目だけ残す */
 .an-title {
+  visibility: hidden;
   flex: 1;
   min-width: 0;
-  padding: 0 4px;
+  padding: 0;
   font-size: 15px;
   font-weight: 700;
   white-space: nowrap;
@@ -616,57 +618,65 @@ svg { display: block; }
   white-space: nowrap;
   pointer-events: none;
 }
-/* 次の動画を撮影するボタン（上の帯の左、戻るボタンの隣。蛍光イエローの地に「撮影」の文字） */
+/* 上の帯の「撮影」「録音」ボタン。2つとも同じ大きさにそろえる（大きさは下の --tb-* で決める） */
+.an-top { --tb-w: 90px; --tb-h: 44px; --tb-font: 15px; --tb-gap: 6px; }
+/* 幅の狭い画面と横画面では、収まるように少し小さくする */
+@media (max-width: 379px) {
+  .an-top { --tb-w: 78px; --tb-font: 14px; }
+}
+@media (max-width: 340px) {
+  .an-top { --tb-w: 64px; --tb-gap: 4px; }
+}
+@media (orientation: landscape) and (max-height: 560px) {
+  .an-top { --tb-w: 54px; --tb-font: 13px; --tb-gap: 4px; }
+}
+/* 次の動画を撮影するボタン（戻るボタンの隣。蛍光イエローの地に「撮影」の文字） */
 .shoot-btn {
   flex: none;
   display: flex;
   align-items: center;
-  height: 40px;
+  justify-content: center;
+  width: var(--tb-w);
+  height: var(--tb-h);
   margin: 0 6px 0 2px;
-  padding: 0 13px;
-  border-radius: 20px;
+  padding: 0;
+  border-radius: 22px;
   background: var(--accent);
   color: #0B0B0B;
-  font-size: 14px;
+  font-size: var(--tb-font);
   font-weight: 800;
   white-space: nowrap;
   text-shadow: none;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
 }
 .shoot-btn:active { background: #C9E600; }
-/* 幅の狭い画面と横画面では、左右の余白を詰める（タイトルの表示幅を確保するため） */
-@media (max-width: 340px), (orientation: landscape) and (max-height: 560px) {
-  .shoot-btn { padding: 0 9px; }
-}
 /* 解説動画の録音ボタン（撮影ボタンの隣。赤い丸のマーク＋「録音」。録音中は赤地に経過時間を表示する） */
 .voice-btn {
   flex: none;
   display: flex;
   align-items: center;
-  gap: 6px;
-  height: 40px;
+  justify-content: center;
+  gap: var(--tb-gap);
+  width: var(--tb-w);
+  height: var(--tb-h);
   margin: 0 6px 0 0;
-  padding: 0 12px 0 11px;
+  padding: 0;
   border: 1px solid rgba(255, 255, 255, 0.34);
-  border-radius: 20px;
+  border-radius: 22px;
   background: rgba(28, 28, 30, 0.86);
   color: #fff;
-  font-size: 14px;
+  font-size: var(--tb-font);
   font-weight: 800;
   white-space: nowrap;
   text-shadow: none;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
 }
 .voice-btn:active { background: #3a3a3d; }
-.voice-btn .dot { display: block; width: 14px; height: 14px; border-radius: 50%; background: #FF3B30; box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.9); }
-.voice-btn .stop { display: none; width: 12px; height: 12px; border-radius: 3px; background: #fff; }
+.voice-btn .dot { flex: none; display: block; width: 14px; height: 14px; border-radius: 50%; background: #FF3B30; box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.9); }
+.voice-btn .stop { flex: none; display: none; width: 12px; height: 12px; border-radius: 3px; background: #fff; }
 .voice-btn span { font-variant-numeric: tabular-nums; }
-/* 幅の狭い画面と横画面では、文字を省いて丸いボタンにする（タイトルの表示幅を確保するため。録音中は経過時間を表示するので除く） */
-@media (max-width: 399px), (orientation: landscape) and (max-height: 560px) {
-  .voice-btn:not([aria-pressed="true"]) { width: 40px; padding: 0; justify-content: center; }
-  .voice-btn:not([aria-pressed="true"]) span { display: none; }
-}
-.voice-btn[aria-pressed="true"] { margin-left: 2px; padding: 0 14px 0 12px; border-color: transparent; background: #FF3B30; }
+/* 録音中はほかのボタンを隠すので、経過時間が窮屈にならないよう幅を広げてよい */
+.voice-btn[aria-pressed="true"] { width: auto; min-width: var(--tb-w); margin-left: 2px; padding: 0 12px; border-color: transparent; background: #FF3B30; }
 .voice-btn[aria-pressed="true"] .dot { display: none; }
 .voice-btn[aria-pressed="true"] .stop { display: block; }
 /* 録音中は、画面を離れる操作（戻る・撮影・保存など）を隠す */
@@ -674,7 +684,6 @@ svg { display: block; }
 .analyze.is-voice #an-shoot,
 .analyze.is-voice #an-fav,
 .analyze.is-voice #an-save { display: none; }
-.analyze.is-voice .an-title { padding-left: 8px; }
 /* 録音用に映像と補助線を合成するキャンバス（画面には見せない） */
 .voice-canvas { position: fixed; left: 0; top: 0; width: 2px; height: 2px; opacity: 0.01; pointer-events: none; }
 .stage-msg {
