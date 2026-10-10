@@ -842,7 +842,7 @@ svg { display: block; }
   .analyze #tools-main .tool { flex: 1 1 0; min-width: 0; padding: 0; }
   /* 幅が狭いので短いラベルを表示する（横画面では元のラベル） */
   .analyze #tools-main .tool span[data-short] { font-size: 0; }
-  .analyze #tools-main .tool span[data-short]::after { content: attr(data-short); font-size: 8.500px; }
+  .analyze #tools-main .tool span[data-short]::after { content: attr(data-short); font-size: 8px; }
 
   .analyze #tools-style { align-items: center; gap: 6px; overflow-x: auto; }
   .analyze #tools-style .tool { flex: none; min-width: 42px; padding: 0 4px; }
@@ -857,7 +857,11 @@ svg { display: block; }
   .analyze .speeds button { font-size: 10.500px; }
   .analyze .fps-chip { padding: 0 5px; font-size: 9px; }
   .analyze .t-btn { font-size: 11px; }
-  .analyze #tools-main .tool span[data-short]::after { font-size: 7.500px; }
+  .analyze #tools-main .tool span[data-short]::after { font-size: 7px; }
+}
+@media (orientation: portrait) and (max-width: 340px) {
+  .analyze .tools { gap: 3px; }
+  .analyze #tools-main .tool span[data-short]::after { font-size: 6.500px; }
 }
 
 /* 横画面：動画を左、操作を右にまとめて動画を覆わない */
@@ -890,7 +894,9 @@ svg { display: block; }
   .analyze .fps-chip { flex: 1; height: 30px; white-space: nowrap; }
   .analyze .tools-wrap { margin: 6px -10px 0 -10px; margin-right: calc(-1 * max(10px, var(--sar))); -webkit-mask-image: none; mask-image: none; }
   .analyze .tools { overflow: visible; padding: 0 max(10px, var(--sar)) 0 10px; touch-action: pan-y; }
-  .analyze #tools-main { display: grid; grid-template-columns: repeat(3, 1fr); }
+  .analyze #tools-main { display: grid; grid-template-columns: repeat(5, 1fr); }
+  .analyze #tools-main .tool span[data-short] { font-size: 0; }
+  .analyze #tools-main .tool span[data-short]::after { content: attr(data-short); font-size: 9.500px; }
   .analyze #tools-style { flex-wrap: wrap; row-gap: 6px; }
   .analyze .tool { min-width: 0; height: 48px; padding: 0 2px; }
   .analyze .tool-sep { display: none; }

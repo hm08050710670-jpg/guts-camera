@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var APP_VERSION = '1.3.1';
+  var APP_VERSION = '1.4.0';
 
   var CLUBS = ['ドライバー', '3W', '5W', 'UT', '5I', '6I', '7I', '8I', '9I', 'PW', 'AW', 'SW', 'パター', 'その他'];
   var COLORS = [
@@ -820,7 +820,7 @@
       blob: opts.blob,
       url: URL.createObjectURL(opts.blob),
       meta: meta,
-      shapes: (opts.shapes || []).map(function (s) { return JSON.parse(JSON.stringify(s)); }),
+      shapes: (opts.shapes || []).map(normalizeShape),
       history: [],
       selected: null,
       mode: 'play',
@@ -829,7 +829,7 @@
       swayCount: 0,
       hidden: false,
       color: COLORS[0][1],
-      width: 3.5,
+      width: 2,
       extend: false,
       rate: 1,
       estFps: meta.estFps || 0,
@@ -1332,6 +1332,15 @@
     for (var i = 0; i < cur.shapes.length; i++) if (cur.shapes[i].id === id) return cur.shapes[i];
     return null;
   }
+  // 保存データを読み込むときの整形。以前のスウェーライン（縦線専用の形式）は、
+  // シャフトラインと同じ直線の形式に変えて、同じように動かせるようにする。
+  function normalizeShape(src) {
+    var s = JSON.parse(JSON.stringify(src));
+    if (s.type === 'vline') {
+      return { id: s.id, type: 'line', kind: 'sway', x1: s.x, y1: s.y1, x2: s.x, y2: s.y2, extend: false, color: s.color, width: s.width };
+    }
+    return s;
+  }
   function snapshot() { return JSON.stringify(cur.shapes); }
   function pushHistory(snap) {
     cur.history.push(snap || snapshot());
@@ -1428,6 +1437,7 @@
     if (cur && cur.mode === 'draw') {
       if (cur.tool === 'line') text = cur.pending && cur.pending.fixed1 ? '② シャフト上の2点目をタップ' : '① シャフト上の1点目をタップ';
       else if (cur.tool === 'sway') text = cur.swayCount === 0 ? '① 左足の外側をタップ' : '② 右足の外側をタップ';
+      else if (cur.tool === 'ball') text = 'ボールの位置をタップ';
     }
     el.textContent = text;
     el.hidden = !text;
@@ -1546,10 +1556,12 @@
       renderShapes();
       return;
     }
-    if (cur.tool === 'sway') {
+    // スウェーライン（2本）とボールライン（1本）：タップした位置に、まっすぐな縦線を引く。
+    // 引いたあとはシャフトラインと同じ直線として扱い、端の丸や線の途中をドラッグして動かせる。
+    if (cur.tool === 'sway' || cur.tool === 'ball') {
       var before = snapshot();
       var vr = visibleRangeY();
-      var v = { id: uid(), type: 'vline', x: p.x, y1: vr[0], y2: vr[1], color: cur.color, width: cur.width };
+      var v = { id: uid(), type: 'line', kind: cur.tool, x1: p.x, y1: vr[0], x2: p.x, y2: vr[1], extend: false, color: cur.color, width: cur.width };
       cur.shapes.push(v);
       cur.selected = v.id;
       drag = { pid: e.pointerId, place: 'sway', id: v.id, before: before };
@@ -1585,7 +1597,7 @@
     if (drag.place === 'p2') { cur.pending.p2 = p; renderShapes(); return; }
     if (drag.place === 'sway') {
       var v = findShape(drag.id);
-      if (v) { v.x = p.x; renderShapes(); }
+      if (v) { v.x1 = v.x2 = p.x; renderShapes(); }
       return;
     }
     var s = findShape(drag.id);
@@ -1667,8 +1679,11 @@
     }
     if (d.place === 'sway') {
       pushHistory(d.before);
-      cur.swayCount++;
-      if (cur.swayCount >= 2) { cur.tool = null; cur.swayCount = 0; }
+      if (cur.tool === 'ball') cur.tool = null;
+      else {
+        cur.swayCount++;
+        if (cur.swayCount >= 2) { cur.tool = null; cur.swayCount = 0; }
+      }
       shapesChanged();
       return;
     }
