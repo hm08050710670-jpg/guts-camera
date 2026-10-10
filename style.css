@@ -255,6 +255,25 @@ svg { display: block; }
 .cam-info { flex: 1; min-width: 0; display: flex; flex-direction: column; padding: 0 4px; line-height: 1.350; }
 #cam-dir { font-size: 15px; font-weight: 700; }
 #cam-quality { min-height: 16px; color: #E0E0E0; font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* ガイド線（構図合わせ用。画面に重ねて表示するだけで、録画には写らない） */
+.cam-guide-btn {
+  flex: none;
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 17px;
+  background: rgba(28, 28, 30, 0.82);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+  text-shadow: none;
+  white-space: nowrap;
+}
+.cam-guide-btn[aria-pressed="true"] { background: var(--accent); color: #0B0B0B; }
+.camera.is-rec .cam-guide-btn { display: none; }
+.cam-guide { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.cam-guide line { stroke: rgba(255, 255, 255, 0.72); stroke-width: 1; }
+.cam-guide line.shade { stroke: rgba(0, 0, 0, 0.3); stroke-width: 2.500; }
+.cam-guide text { fill: rgba(255, 255, 255, 0.9); font-size: 11px; font-weight: 700; paint-order: stroke; stroke: rgba(0, 0, 0, 0.55); stroke-width: 2.500px; }
 .cam-timer {
   flex: none;
   display: flex;

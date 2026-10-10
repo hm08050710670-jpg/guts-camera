@@ -101,9 +101,11 @@
       <span id="cam-quality"></span>
     </div>
     <div class="cam-timer" id="cam-timer" hidden><i></i><span id="cam-time">0:00</span></div>
+    <button class="cam-guide-btn" id="cam-guide-btn" aria-pressed="true">ガイド線</button>
   </header>
   <div class="cam-stage">
     <video id="cam-video" playsinline webkit-playsinline muted autoplay disablepictureinpicture></video>
+    <svg class="cam-guide" id="cam-guide" aria-hidden="true"></svg>
     <div class="cam-focus" id="cam-focus" hidden></div>
     <div class="stage-msg" id="cam-msg" hidden></div>
   </div>

@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var APP_VERSION = '1.7.0';
+  var APP_VERSION = '1.8.0';
 
   var CLUBS = ['ドライバー', '3W', '5W', 'UT', '5I', '6I', '7I', '8I', '9I', 'PW', 'AW', 'SW', 'パター', 'その他'];
   var COLORS = [
@@ -231,6 +231,7 @@
     ultraId: null,         // 超広角カメラのID（見つかった場合）
     wideMax: 1,            // 標準カメラで拡大できる上限（倍率）
     ctl: null,             // いまのカメラでのズームの扱い方
+    guide: loadGuide(),    // ガイド線を表示するか
     diag: {}
   };
   var MAX_ZOOM = 5;
@@ -298,6 +299,7 @@
     }
     try { camVideo.pause(); } catch (e) {}
     camVideo.srcObject = null;
+    $('cam-guide').textContent = '';
   }
 
   // 広角を「別のカメラ（超広角カメラ）」として起動する状態かどうか
@@ -567,7 +569,9 @@
   function updateLensUI() {
     var box = $('cam-lens');
     var show = lensVisible();
+    var was = box.hidden;
     box.hidden = !show;
+    if (was !== box.hidden) drawGuide();   // ボタンの並びの高さが変わるので、ガイド線の範囲を引き直す
     if (!show) return;
     var ps = cam.ctl.presets, active = ps[0];
     for (var i = 0; i < ps.length; i++) if (cam.zoom >= ps[i] - 0.001) active = ps[i];
@@ -630,6 +634,63 @@
       focusAt(e.clientX, e.clientY);
     });
   })();
+
+  /* ---------- ガイド線（H型：中央線＋頭・足元＋対角線） ----------
+     撮影時の構図合わせ用。画面に重ねて表示するだけで、録画には写らない。
+     線を引く範囲は、映像の上端から「下のボタンが並ぶ部分の上」まで。
+     分析画面でも下の操作パネルに隠れない範囲に人が収まるように、
+     カメラ画面の下のボタンと、分析画面の操作パネルのうち、高いほうの上端を下限にする。 */
+  var GUIDE_HEAD = 0.32, GUIDE_FEET = 0.88;   // 範囲の高さに対する「頭」「足元」の線の位置
+  var ANALYZE_PANEL_H = 156;                 // 分析画面（縦）の操作パネルの高さ（下の余白を除く）
+  function loadGuide() {
+    try { return localStorage.getItem('guts-cam-guide') !== 'off'; } catch (e) { return true; }
+  }
+  function effectiveSab() {
+    var inl = document.documentElement.style.getPropertyValue('--sab');
+    return inl ? (parseFloat(inl) || 0) : safeInsets().bottom;
+  }
+  function drawGuide() {
+    var svg = $('cam-guide');
+    svg.textContent = '';
+    $('cam-guide-btn').setAttribute('aria-pressed', cam.guide ? 'true' : 'false');
+    var vw = camVideo.videoWidth, vh = camVideo.videoHeight;
+    if (!cam.guide || !cam.stream || !vw || !vh || currentScreen !== 'camera') return;
+    var st = document.querySelector('.cam-stage').getBoundingClientRect();
+    if (!st.width || !st.height) return;
+    // 映像が表示されている範囲（プレビューは切り取らずに全体を表示している）
+    var s = Math.min(st.width / vw, st.height / vh);
+    var w = vw * s, h = vh * s;
+    var centered = getComputedStyle(camVideo).objectPosition.indexOf('50% 50%') === 0;
+    var x0 = (st.width - w) / 2, y0 = centered ? (st.height - h) / 2 : 0;
+    var x1 = x0 + w, yb = y0 + h;
+    if (!centered) {
+      // 縦画面：下のボタンが並ぶ部分の上までを範囲にする
+      var lens = $('cam-lens'), rec = $('cam-rec').getBoundingClientRect();
+      var btnTop = (!lens.hidden ? lens.getBoundingClientRect().top : rec.top) - st.top - 8;
+      var panelTop = st.height - (overlayBottom || (ANALYZE_PANEL_H + effectiveSab()));
+      yb = Math.min(yb, btnTop, panelTop);
+    } else {
+      // 横画面：右側のボタンが並ぶ部分の左までを範囲にする
+      var side = document.querySelector('.cam-bottom').getBoundingClientRect();
+      x1 = Math.min(x1, side.left - st.left);
+    }
+    if (yb - y0 < 80 || x1 - x0 < 80) return;
+    var cx = (x0 + x1) / 2, hh = yb - y0;
+    var yHead = y0 + hh * GUIDE_HEAD, yFeet = y0 + hh * GUIDE_FEET;
+    svg.setAttribute('viewBox', '0 0 ' + st.width + ' ' + st.height);
+    function line(a, b, c, d, name) {
+      svg.appendChild(svgEl('line', { x1: a, y1: b, x2: c, y2: d, 'class': 'shade' }));
+      svg.appendChild(svgEl('line', { x1: a, y1: b, x2: c, y2: d, 'data-g': name }));
+    }
+    line(x0, y0, x1, yb, 'diag1');
+    line(x1, y0, x0, yb, 'diag2');
+    line(cx, y0, cx, yb, 'center');
+    line(x0, yHead, x1, yHead, 'head');
+    line(x0, yFeet, x1, yFeet, 'feet');
+    var t1 = svgEl('text', { x: x0 + 8, y: yHead - 6 }); t1.textContent = '頭';
+    var t2 = svgEl('text', { x: x0 + 8, y: yFeet - 6 }); t2.textContent = '足元';
+    svg.appendChild(t1); svg.appendChild(t2);
+  }
 
   /* ---------- タップでピント合わせ ----------
      プレビューをタップした位置にピント（と明るさ）を合わせる。
@@ -2317,6 +2378,14 @@
 
     // アプリ内カメラ
     $('cam-back').addEventListener('click', function () { closeCamera(); show('capture'); });
+    $('cam-guide-btn').addEventListener('click', function () {
+      cam.guide = !cam.guide;
+      try { localStorage.setItem('guts-cam-guide', cam.guide ? 'on' : 'off'); } catch (e) {}
+      drawGuide();
+    });
+    camVideo.addEventListener('loadedmetadata', drawGuide);
+    camVideo.addEventListener('resize', drawGuide);
+    window.addEventListener('resize', function () { if (currentScreen === 'camera') drawGuide(); });
     $('cam-rec').addEventListener('click', function () { if (cam.recording) stopRec(); else startRec(); });
     $('cam-fps').addEventListener('click', function () {
       if (cam.recording) return;
