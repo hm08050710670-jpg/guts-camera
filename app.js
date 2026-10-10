@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var APP_VERSION = '1.4.1';
+  var APP_VERSION = '1.5.0';
 
   var CLUBS = ['ドライバー', '3W', '5W', 'UT', '5I', '6I', '7I', '8I', '9I', 'PW', 'AW', 'SW', 'パター', 'その他'];
   var COLORS = [
@@ -226,10 +226,14 @@
     stream: null, rec: null, chunks: [], recording: false,
     fpsMode: loadCamFps(), facing: 'environment',
     token: 0, t0: 0, timer: 0, wake: null, discard: false, failed: false,
-    lens: loadCamLens(),   // 'wide'（標準 1×）または 'ultra'（広角）
-    wide: null,            // 広角の使い方：{type:'zoom', normal, wide, ratio} または {type:'device', deviceId, ratio}
+    zoom: loadCamZoom(),   // 標準を 1 とした倍率（0.5 = 広角）
+    onUltra: false,        // 超広角カメラ（別のカメラ）で起動しているか
+    ultraId: null,         // 超広角カメラのID（見つかった場合）
+    wideMax: 1,            // 標準カメラで拡大できる上限（倍率）
+    ctl: null,             // いまのカメラでのズームの扱い方
     diag: {}
   };
+  var MAX_ZOOM = 5;
   var CAM_MAX_SEC = 60;
 
   // 前回選んだフレームレートを覚えておく（60fps非対応の端末で毎回試し直さないため）
@@ -240,11 +244,16 @@
     try { localStorage.setItem('guts-cam-fps', String(cam.fpsMode)); } catch (e) {}
   }
 
-  function loadCamLens() {
-    try { return localStorage.getItem('guts-cam-lens') === 'ultra' ? 'ultra' : 'wide'; } catch (e) { return 'wide'; }
+  function loadCamZoom() {
+    try {
+      var v = parseFloat(localStorage.getItem('guts-cam-zoom'));
+      if (v >= 0.3 && v <= 10) return v;
+      if (localStorage.getItem('guts-cam-lens') === 'ultra') return 0.5;   // 以前の版の設定
+    } catch (e) {}
+    return 1;
   }
-  function saveCamLens() {
-    try { localStorage.setItem('guts-cam-lens', cam.lens); } catch (e) {}
+  function saveCamZoom() {
+    try { localStorage.setItem('guts-cam-zoom', String(Math.round(cam.zoom * 100) / 100)); } catch (e) {}
   }
 
   function camSupported() {
@@ -291,13 +300,13 @@
     camVideo.srcObject = null;
   }
 
-  // 広角を「別のカメラ（超広角カメラ）」として使う状態かどうか
+  // 広角を「別のカメラ（超広角カメラ）」として起動する状態かどうか
   function useUltraDevice() {
-    return cam.facing === 'environment' && cam.lens === 'ultra' && !!cam.wide && cam.wide.type === 'device';
+    return cam.facing === 'environment' && cam.onUltra && !!cam.ultraId;
   }
   function camConstraints(w, h, frameRate) {
     var v = { width: { ideal: w }, height: { ideal: h }, frameRate: frameRate };
-    if (useUltraDevice()) v.deviceId = { exact: cam.wide.deviceId };
+    if (useUltraDevice()) v.deviceId = { exact: cam.ultraId };
     else v.facingMode = { ideal: cam.facing };
     return { audio: false, video: v };
   }
@@ -356,9 +365,11 @@
       if (token !== cam.token) return;
       if (useUltraDevice()) {
         // 広角カメラを起動できなかった場合は、標準のカメラに戻してやり直す
-        cam.wide = null;
-        cam.lens = 'wide';
-        saveCamLens();
+        cam.onUltra = false;
+        cam.ultraId = null;
+        cam.ctl = null;
+        cam.zoom = 1;
+        saveCamZoom();
         updateLensUI();
         toast('広角カメラを起動できなかったため、標準に戻しました', 3600);
         startStream();
@@ -376,43 +387,97 @@
     var parts = [];
     if (w && h) parts.push(w + '×' + h);
     if (st.frameRate) parts.push(Math.round(st.frameRate) + 'fps');
-    if (cam.wide && cam.lens === 'ultra' && cam.facing === 'environment') parts.push('広角');
+    if (cam.ctl && cam.facing === 'environment' && Math.abs(cam.zoom - 1) > 0.04) parts.push(fmtZoom(cam.zoom) + '×');
     $('cam-quality').textContent = parts.join('・');
   }
 
-  /* ---------- 広角（画角の切り替え） ----------
-     端末・iOSのバージョンによって使える方法が違うため、2通りを順に試す。
-       1) ズームの指定：今の画角より広くできる場合（1つのカメラのまま切り替え）
-       2) 超広角カメラを別のカメラとして選ぶ（カメラ名から探す）
-     どちらも使えない端末では、切り替えボタンを表示しない。 */
+  /* ---------- ズーム（広角〜拡大） ----------
+     iPhoneのカメラに近い操作：
+       ・録画ボタンの上の「.5 / 1× / 2」をタップして切り替え
+       ・プレビューを2本指でつまんで、なめらかに拡大・縮小
+       ・「.5 / 1× / 2」の並びを指でなぞっても、なめらかに変えられる
+     端末・iOSのバージョンによって使える方法が違うため、起動したカメラから調べて決める。
+       zoom   : 1つのカメラのまま、ズームの指定だけで広角〜拡大ができる
+       device : 広角は超広角カメラ（別のカメラ）に切り替える。各カメラでズームできる場合はその範囲で動かす
+     倍率は、標準のカメラを 1 として扱う。 */
   var ULTRA_LABEL = /ultra[\s-]?wide|超広角|ウルトラワイド/i;
   var FRONT_LABEL = /front|前面|フロント|facetime|インカメラ/i;
 
+  function fmtZoom(z) {
+    var r = Math.round(z * 10) / 10;
+    return r % 1 === 0 ? String(r) : r.toFixed(1);
+  }
+  function shortZoom(p) {
+    return p < 1 ? '.' + Math.round(p * 10) : fmtZoom(p);
+  }
+
   function setupLens(track, token) {
-    if (!track || cam.facing !== 'environment') { cam.wide = null; updateLensUI(); return; }
+    cam.ctl = null;
+    if (!track || cam.facing !== 'environment') { updateLensUI(); return; }
     var caps = {}, st = {};
     try {
       caps = track.getCapabilities ? track.getCapabilities() : {};
       st = track.getSettings ? track.getSettings() : {};
     } catch (e) {}
-    cam.diag = { label: track.label || '', zoom: caps.zoom ? [caps.zoom.min, caps.zoom.max, st.zoom] : null };
-    if (useUltraDevice()) { updateLensUI(); updateCamInfo(); return; }   // すでに広角カメラで起動している
-    var prev = cam.wide && cam.wide.type === 'zoom' ? cam.wide : null;
-    var normal = st.zoom;
+    var zc = caps.zoom && typeof st.zoom === 'number' && caps.zoom.max > caps.zoom.min
+      ? { min: caps.zoom.min, max: caps.zoom.max, cur: st.zoom } : null;
+    cam.diag = { label: track.label || '', zoom: zc ? [zc.min, zc.max, zc.cur] : null, devices: cam.diag.devices };
+
+    if (useUltraDevice()) { buildDeviceCtl(track, zc, true); return; }
+
+    // 1) 1つのカメラのまま標準より広くできる場合（ズームの最小値が、起動時の値より小さい）
+    var base = zc ? zc.cur : null;
     // カメラを起動し直したときに広角のまま始まる端末では、前に測った標準の値を使う
-    if (prev && caps.zoom && typeof st.zoom === 'number' && Math.abs(st.zoom - caps.zoom.min) < 0.01 && prev.normal > caps.zoom.min) normal = prev.normal;
-    if (caps.zoom && typeof normal === 'number' && caps.zoom.min < normal * 0.9) {
-      cam.wide = { type: 'zoom', normal: normal, wide: caps.zoom.min, ratio: caps.zoom.min / normal };
-      updateLensUI();
-      if (cam.lens === 'ultra') applyZoom(track, cam.wide.wide);
+    if (zc && cam.zoomBase && cam.zoomBaseLabel === track.label && Math.abs(zc.cur - zc.min) < 0.01 && cam.zoomBase > zc.min) base = cam.zoomBase;
+    if (zc && zc.min < base * 0.9) {
+      cam.zoomBase = base;
+      cam.zoomBaseLabel = track.label;
+      var mx = Math.min(zc.max / base, MAX_ZOOM);
+      finishCtl({ mode: 'zoom', track: track, zc: zc, base: base, min: zc.min / base, max: mx, devMin: zc.min / base, devMax: mx, applied: zc.cur });
       return;
     }
+    // 2) 超広角カメラが別のカメラとして用意されているか調べる
     findUltraDevice(st.deviceId).then(function (id) {
       if (token !== cam.token) return;
-      cam.wide = id ? { type: 'device', deviceId: id, ratio: 0.5 } : null;
-      updateLensUI();
-      if (id && cam.lens === 'ultra') startStream();
+      cam.ultraId = id;
+      if (id && cam.zoom < 0.95) { cam.onUltra = true; startStream(); return; }   // 広角を選んでいたら、超広角カメラで起動し直す
+      buildDeviceCtl(track, zc, false);
     });
+  }
+  function buildDeviceCtl(track, zc, onUltra) {
+    var c = { mode: 'device', track: track, zc: zc, onUltra: onUltra, applied: zc ? zc.cur : null };
+    if (onUltra) {
+      // 超広角カメラ：そのままで 0.5 倍。ズームできる場合は 1 倍相当まで
+      c.base = zc ? zc.min : null;
+      c.devMin = 0.5;
+      c.devMax = zc ? Math.min(0.5 * zc.max / zc.min, 1) : 0.5;
+    } else {
+      c.base = zc ? zc.cur : null;
+      c.devMin = 1;
+      c.devMax = zc ? Math.min(zc.max / zc.cur, MAX_ZOOM) : 1;
+      cam.wideMax = c.devMax;
+    }
+    c.min = cam.ultraId ? 0.5 : 1;
+    c.max = Math.max(c.devMax, cam.wideMax || 1);
+    finishCtl(c);
+  }
+  function finishCtl(c) {
+    c.presets = [];
+    if (c.min <= 0.6) c.presets.push(Math.round(c.min * 100) / 100);
+    c.presets.push(1);
+    if (c.max >= 2) c.presets.push(2);
+    cam.ctl = c;
+    cam.zoom = clamp(cam.zoom, c.min, c.max);
+    if (c.mode === 'device') {
+      // 選んでいる倍率と起動しているカメラが合っていなければ、合うカメラで起動し直す
+      var wantUltra = !!cam.ultraId && cam.zoom < 0.95;
+      if (wantUltra !== c.onUltra) { cam.onUltra = wantUltra; startStream(); return; }
+      cam.zoom = clamp(cam.zoom, c.devMin, c.devMax);
+    }
+    buildLensButtons();
+    applyTrackZoom();
+    updateLensUI();
+    updateCamInfo();
   }
   function findUltraDevice(currentId) {
     var md = navigator.mediaDevices;
@@ -427,38 +492,137 @@
       return null;
     }).catch(function () { return null; });
   }
-  function applyZoom(track, z) {
+
+  // 倍率（標準=1）を、いまのカメラのズームの値に直す。ズームできないカメラでは null
+  function trackZoomFor(rel) {
+    var c = cam.ctl;
+    if (!c || !c.zc || c.base == null) return null;
+    var z = c.mode === 'device' && c.onUltra ? c.base * (rel / 0.5) : c.base * rel;
+    return clamp(z, c.zc.min, c.zc.max);
+  }
+  var zoomBusy = false, zoomPending = false, zoomWarned = false;
+  function applyTrackZoom() {
+    var c = cam.ctl;
+    if (!c) return;
+    var z = trackZoomFor(cam.zoom);
+    if (z == null || (c.applied != null && Math.abs(z - c.applied) < 0.001)) return;
+    if (zoomBusy) { zoomPending = true; return; }   // 前の変更が終わってから、最新の値だけを送る
+    zoomBusy = true;
     var p;
-    try { p = track.applyConstraints({ advanced: [{ zoom: z }] }); } catch (e) { p = Promise.reject(e); }
-    return Promise.resolve(p).then(updateCamInfo).catch(function () {
-      toast('画角を切り替えられませんでした');
+    try { p = c.track.applyConstraints({ advanced: [{ zoom: z }] }); } catch (e) { p = Promise.reject(e); }
+    Promise.resolve(p).then(function () { c.applied = z; }, function () {
+      if (!zoomWarned) { zoomWarned = true; toast('ズームを変更できませんでした'); }
+    }).then(function () {
+      zoomBusy = false;
+      if (zoomPending) { zoomPending = false; applyTrackZoom(); }
+    });
+  }
+
+  // live=true：指で動かしている途中（カメラの切り替えはしない）。live=false：ボタンのタップ
+  function setZoom(rel, live) {
+    var c = cam.ctl;
+    if (!c || cam.recording || !(rel > 0)) return;
+    rel = clamp(rel, c.min, c.max);
+    if (live) {
+      // 区切りのよい倍率の近くでは、その倍率にぴったり合わせる
+      for (var i = 0; i < c.presets.length; i++) {
+        if (Math.abs(rel / c.presets[i] - 1) < 0.04) rel = c.presets[i];
+      }
+    }
+    if (c.mode === 'device') {
+      var wantUltra = !!cam.ultraId && rel < 0.999;
+      if (!live && wantUltra !== c.onUltra) {
+        cam.zoom = rel;
+        saveCamZoom();
+        cam.onUltra = wantUltra;
+        updateLensUI();
+        startStream();
+        return;
+      }
+      rel = clamp(rel, c.devMin, c.devMax);
+    }
+    cam.zoom = rel;
+    applyTrackZoom();
+    updateLensUI();
+    updateCamInfo();
+    saveCamZoom();
+  }
+
+  function lensVisible() {
+    var c = cam.ctl;
+    return !!c && cam.facing === 'environment' && (c.presets.length >= 2 || c.devMax - c.devMin > 0.05);
+  }
+  function buildLensButtons() {
+    var box = $('cam-lens');
+    box.textContent = '';
+    if (!cam.ctl) return;
+    cam.ctl.presets.forEach(function (p) {
+      var b = document.createElement('button');
+      b.setAttribute('data-zoom', String(p));
+      b.setAttribute('aria-label', p < 1 ? '広角' : (p === 1 ? '標準' : p + '倍'));
+      box.appendChild(b);
     });
   }
   function updateLensUI() {
     var box = $('cam-lens');
-    var show = !!cam.wide && cam.facing === 'environment';
+    var show = lensVisible();
     box.hidden = !show;
     if (!show) return;
-    var r = Math.round(cam.wide.ratio * 10) / 10;
-    box.querySelector('[data-lens="ultra"]').textContent = r + '×';
+    var ps = cam.ctl.presets, active = ps[0];
+    for (var i = 0; i < ps.length; i++) if (cam.zoom >= ps[i] - 0.001) active = ps[i];
     Array.prototype.forEach.call(box.children, function (b) {
-      b.classList.toggle('is-on', b.getAttribute('data-lens') === cam.lens);
+      var p = parseFloat(b.getAttribute('data-zoom'));
+      var on = p === active;
+      b.classList.toggle('is-on', on);
+      b.textContent = on ? fmtZoom(cam.zoom) + '×' : shortZoom(p);
     });
   }
-  function setLens(lens) {
-    if (cam.recording || !cam.wide || cam.lens === lens) return;
-    cam.lens = lens;
-    saveCamLens();
-    updateLensUI();
-    if (cam.wide.type === 'zoom') {
-      var track = cam.stream && cam.stream.getVideoTracks()[0];
-      if (track) applyZoom(track, lens === 'ultra' ? cam.wide.wide : cam.wide.normal);
-    } else {
-      startStream();
+
+  // 「.5 / 1× / 2」の並び：タップで切り替え、なぞるとなめらかに変わる
+  (function () {
+    var box = $('cam-lens'), d = null;
+    box.addEventListener('pointerdown', function (e) {
+      if (e.button || cam.recording || !cam.ctl) return;
+      e.preventDefault();
+      d = { pid: e.pointerId, x: e.clientX, y: e.clientY, z0: cam.zoom, moved: false, btn: e.target.closest ? e.target.closest('button') : null };
+      try { box.setPointerCapture(e.pointerId); } catch (err) {}
+    });
+    box.addEventListener('pointermove', function (e) {
+      if (!d || e.pointerId !== d.pid) return;
+      var vertical = getComputedStyle(box).flexDirection.indexOf('column') === 0;
+      var delta = vertical ? d.y - e.clientY : e.clientX - d.x;
+      if (Math.abs(delta) > 8) d.moved = true;
+      if (d.moved) setZoom(d.z0 * Math.pow(2, delta / 110), true);
+    });
+    function end(e) {
+      if (!d || e.pointerId !== d.pid) return;
+      var cur_ = d;
+      d = null;
+      if (e.type === 'pointerup' && !cur_.moved && cur_.btn) setZoom(parseFloat(cur_.btn.getAttribute('data-zoom')), false);
     }
-  }
-  camVideo.addEventListener('loadedmetadata', updateCamInfo);
-  camVideo.addEventListener('resize', updateCamInfo);
+    box.addEventListener('pointerup', end);
+    box.addEventListener('pointercancel', end);
+  })();
+
+  // プレビューを2本指でつまんで拡大・縮小
+  (function () {
+    var el = document.querySelector('.cam-stage'), pinch = null;
+    function dist(t) { return Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY); }
+    el.addEventListener('touchstart', function (e) {
+      if (e.touches.length === 2 && cam.ctl && !cam.recording && lensVisible()) {
+        pinch = { d0: Math.max(10, dist(e.touches)), z0: cam.zoom };
+        e.preventDefault();
+      }
+    }, { passive: false });
+    el.addEventListener('touchmove', function (e) {
+      if (!pinch || e.touches.length !== 2) return;
+      e.preventDefault();
+      setZoom(pinch.z0 * dist(e.touches) / pinch.d0, true);
+    }, { passive: false });
+    function end(e) { if (e.touches.length < 2) pinch = null; }
+    el.addEventListener('touchend', end);
+    el.addEventListener('touchcancel', end);
+  })();
 
   function showCamError(err) {
     var name = err && err.name || '';
@@ -2006,7 +2170,9 @@
       var names = list.filter(function (d) { return d.kind === 'videoinput'; }).map(function (d) { return d.label || '（名前なし）'; });
       lines.push('カメラ：' + (names.length ? names.join('、') : 'なし'));
       if (cam.diag.label) lines.push('使用：' + cam.diag.label + ' / ズーム：' + (cam.diag.zoom ? cam.diag.zoom[0] + '〜' + cam.diag.zoom[1] + '（今 ' + cam.diag.zoom[2] + '）' : 'なし'));
-      lines.push('広角：' + (cam.wide ? cam.wide.type + ' ' + (Math.round(cam.wide.ratio * 100) / 100) : 'なし') + ' / 選択：' + cam.lens);
+      var c = cam.ctl;
+      lines.push('ズーム操作：' + (c ? c.mode + ' ' + fmtZoom(c.min) + '〜' + fmtZoom(c.max) + '（このカメラ ' + fmtZoom(c.devMin) + '〜' + fmtZoom(c.devMax) + '）' : 'なし') +
+        ' / 超広角：' + (cam.ultraId ? 'あり' : 'なし') + ' / 現在：' + fmtZoom(cam.zoom) + '×');
       return ask('診断情報', lines.join('\n'), [{ label: '閉じる', value: 1, kind: 'primary' }]);
     }).then(function () {
       if (strip.parentNode) strip.parentNode.removeChild(strip);
@@ -2060,13 +2226,10 @@
     $('cam-flip').addEventListener('click', function () {
       if (cam.recording) return;
       cam.facing = cam.facing === 'environment' ? 'user' : 'environment';
-      cam.wide = null;      // 前後を切り替えたら、広角が使えるかを調べ直す
+      cam.ctl = null;       // 前後を切り替えたら、ズームの扱い方を調べ直す
+      cam.onUltra = false;
       updateLensUI();
       startStream();
-    });
-    $('cam-lens').addEventListener('click', function (e) {
-      var b = e.target.closest('button');
-      if (b) setLens(b.getAttribute('data-lens'));
     });
 
     // 一覧

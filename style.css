@@ -270,7 +270,7 @@ svg { display: block; }
   font-variant-numeric: tabular-nums;
 }
 .cam-timer i { width: 10px; height: 10px; border-radius: 50%; background: var(--danger); }
-.cam-stage { position: absolute; left: 0; right: 0; top: var(--sat); bottom: 0; background: #000; overflow: hidden; }
+.cam-stage { position: absolute; left: 0; right: 0; top: var(--sat); bottom: 0; background: #000; overflow: hidden; touch-action: none; }
 #cam-video {
   position: absolute;
   inset: 0;
@@ -302,28 +302,40 @@ svg { display: block; }
 #cam-fps { grid-area: fps; }
 .cam-rec { grid-area: rec; }
 #cam-flip { grid-area: flip; }
-/* 画角の切り替え（広角が使える端末だけ表示） */
+/* ズームの切り替え（iPhoneのカメラに近い見た目。使える端末だけ表示） */
 .cam-lens {
   grid-area: lens;
   justify-self: center;
   display: flex;
-  gap: 4px;
-  margin-bottom: 12px;
-  padding: 3px;
-  border-radius: 20px;
-  background: rgba(28, 28, 30, 0.78);
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding: 4px 6px;
+  border-radius: 26px;
+  background: rgba(0, 0, 0, 0.36);
+  touch-action: none;
 }
 .cam-lens button {
-  min-width: 48px;
+  display: grid;
+  place-items: center;
+  width: 34px;
   height: 34px;
-  padding: 0 10px;
-  border-radius: 17px;
+  padding: 0;
+  border-radius: 50%;
+  background: rgba(28, 28, 30, 0.74);
   color: var(--text);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
-.cam-lens button.is-on { background: var(--accent); color: #0B0B0B; }
+.cam-lens button.is-on {
+  width: 44px;
+  height: 44px;
+  background: rgba(28, 28, 30, 0.92);
+  color: var(--accent);
+  font-size: 13px;
+}
 .cam-side {
   justify-self: start;
   display: grid;
@@ -378,8 +390,17 @@ svg { display: block; }
   .camera .cam-side { justify-self: center; align-self: start; }
   .camera #cam-flip { justify-self: center; align-self: end; }
   /* 横画面では録画ボタンのすぐ上に縦に並べる */
-  .camera .cam-lens { grid-area: fps; align-self: end; flex-direction: column; margin-bottom: 10px; }
-  .camera .cam-lens button { min-width: 52px; height: 30px; }
+  /* 横画面では、録画ボタンの左隣に縦に並べる */
+  .camera .cam-lens {
+    position: absolute;
+    right: calc(100% - 4px);
+    top: 50%;
+    transform: translateY(-50%);
+    flex-direction: column-reverse;
+    margin: 0;
+    padding: 6px 4px;
+    gap: 6px;
+  }
   #cam-msg { padding-bottom: 24px; padding-right: calc(136px + var(--sar)); }
 }
 
