@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var APP_VERSION = '1.5.0';
+  var APP_VERSION = '1.6.0';
 
   var CLUBS = ['ドライバー', '3W', '5W', 'UT', '5I', '6I', '7I', '8I', '9I', 'PW', 'AW', 'SW', 'パター', 'その他'];
   var COLORS = [
@@ -1097,6 +1097,30 @@
     ]).then(function (v) {
       if (v === 'save') openSaveSheet();
       else if (v === 'leave') closeVideo(true);
+    });
+  }
+
+  // 分析画面から、同じ撮影方向のまま次の動画を撮影する
+  function shootNext() {
+    if (!cur) return;
+    function go() {
+      if (cur && cur.meta.dir && DIR_HINT[cur.meta.dir]) {
+        captureDir = cur.meta.dir;
+        setSeg($('cap-dir'), captureDir);
+        $('cap-dir-hint').textContent = DIR_HINT[captureDir];
+      }
+      closeVideo(false);
+      show('capture');   // カメラ画面の「戻る」で戻る先
+      openCamera();
+    }
+    if (cur.saved || !cur.ready) { go(); return; }
+    ask('保存していません', 'この動画はまだアプリに保存されていません。', [
+      { label: '保存する', value: 'save', kind: 'primary' },
+      { label: '保存せず撮影', value: 'go' },
+      { label: 'キャンセル', value: '' }
+    ]).then(function (v) {
+      if (v === 'save') openSaveSheet();
+      else if (v === 'go') go();
     });
   }
 
@@ -2245,6 +2269,7 @@
 
     // 動画分析：上部
     $('an-back').addEventListener('click', requestBack);
+    $('an-shoot').addEventListener('click', shootNext);
     $('an-save').addEventListener('click', openSaveSheet);
     $('an-fav').addEventListener('click', function () {
       if (!cur || !cur.ready) return;

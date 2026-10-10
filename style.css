@@ -587,6 +587,21 @@ svg { display: block; }
   white-space: nowrap;
   pointer-events: none;
 }
+/* 次の動画を撮影するボタン（上の帯の左、戻るボタンの隣。動画の上には置かず、線を引く操作と重ならないようにする） */
+.shoot-btn {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  margin: 0 6px 0 2px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #0B0B0B;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+.shoot-btn:active { background: #C9E600; }
+.shoot-btn svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.800; stroke-linecap: round; stroke-linejoin: round; }
 .stage-msg {
   position: absolute;
   inset: 0;
