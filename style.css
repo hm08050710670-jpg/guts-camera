@@ -587,21 +587,38 @@ svg { display: block; }
   white-space: nowrap;
   pointer-events: none;
 }
-/* 次の動画を撮影するボタン（上の帯の左、戻るボタンの隣。動画の上には置かず、線を引く操作と重ならないようにする） */
+/* 次の動画を録画するボタン（上の帯の左、戻るボタンの隣。蛍光イエローの地に赤い丸の録画マーク） */
 .shoot-btn {
   flex: none;
-  display: grid;
-  place-items: center;
-  width: 40px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   height: 40px;
   margin: 0 6px 0 2px;
-  border-radius: 50%;
+  padding: 0 13px 0 11px;
+  border-radius: 20px;
   background: var(--accent);
   color: #0B0B0B;
+  font-size: 14px;
+  font-weight: 800;
+  white-space: nowrap;
+  text-shadow: none;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
 }
 .shoot-btn:active { background: #C9E600; }
-.shoot-btn svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.800; stroke-linecap: round; stroke-linejoin: round; }
+.shoot-btn i {
+  display: block;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #FF3B30;
+  box-shadow: 0 0 0 2px rgba(11, 11, 11, 0.85);
+}
+/* 幅の狭い画面と横画面では、文字を省いて丸いボタンにする（タイトルの表示幅を確保するため） */
+@media (max-width: 340px), (orientation: landscape) and (max-height: 560px) {
+  .shoot-btn { width: 40px; padding: 0; justify-content: center; }
+  .shoot-btn span { display: none; }
+}
 .stage-msg {
   position: absolute;
   inset: 0;
