@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var APP_VERSION = '1.11.0';
+  var APP_VERSION = '1.12.0';
 
   var CLUBS = ['ドライバー', '3W', '5W', 'UT', '5I', '6I', '7I', '8I', '9I', 'PW', 'AW', 'SW', 'パター', 'その他'];
   var COLORS = [
@@ -678,29 +678,39 @@
     var cx = (x0 + x1) / 2, hh = yb - y0;
     var yHead = y0 + hh * GUIDE_HEAD, yFeet = y0 + hh * GUIDE_FEET;
     svg.setAttribute('viewBox', '0 0 ' + st.width + ' ' + st.height);
-    function line(a, b, c, d, name) {
+    function line(a, b, c, d, name, attr) {
+      var o = { x1: a, y1: b, x2: c, y2: d };
       svg.appendChild(svgEl('line', { x1: a, y1: b, x2: c, y2: d, 'class': 'shade' }));
-      svg.appendChild(svgEl('line', { x1: a, y1: b, x2: c, y2: d, 'data-g': name }));
+      o[attr || 'data-g'] = name;
+      svg.appendChild(svgEl('line', o));
     }
-    line(x0, y0, x1, yb, 'diag1');
-    line(x1, y0, x0, yb, 'diag2');
-    line(cx, y0, cx, yb, 'center');
+    // 構えの目安（人の形・手元の丸・丸で交わるバッテン）は、後方からの撮影・縦画面のときだけ出す。
+    // そのときは、角から角への対角線のかわりに丸で交わるバッテンを引き、縦の中央線も丸の中心を通す。
+    var pose = (!centered && captureDir === '後方') ? poseLayout(x0, y0, x1, yb) : null;
+    if (!pose) {
+      line(x0, y0, x1, yb, 'diag1');
+      line(x1, y0, x0, yb, 'diag2');
+    }
+    var lx = pose ? Math.round(pose.c[0] * 10) / 10 : cx;
+    line(lx, y0, lx, yb, 'center');
     line(x0, yHead, x1, yHead, 'head');
     line(x0, yFeet, x1, yFeet, 'feet');
     var t1 = svgEl('text', { x: x0 + 8, y: yHead - 6 }); t1.textContent = '頭';
     var t2 = svgEl('text', { x: x0 + 8, y: yFeet - 6 }); t2.textContent = '足元';
     svg.appendChild(t1); svg.appendChild(t2);
-    // 構えの目安（体の枠・手元の丸・バッテン）は、後方からの撮影・縦画面のときだけ出す
-    if (!centered && captureDir === '後方') drawPose(svg, x0, y0, x1, yb);
+    if (pose) drawPose(svg, pose, x0, y0, x1, yb, line);
   }
 
   /* ---------- 構えの目安（後方から撮影するとき） ----------
      ・人の形（黄色いふち＋うすい塗り）：構えたときに体を合わせる目安。いただいたシルエット画像の輪郭をなぞったもの
-     ・赤い丸  ：手元（グリップの先とシャフトの境目）を合わせる目印。人の形のこぶしが、この丸の中心に来る
-     ・赤いバッテン：範囲の下の両角から、赤い丸の中心を通る2本の線（中心が丸の中に来る）
+     ・赤い丸  ：手元（グリップの先とシャフトの境目）を合わせる目印。人の形のこぶしの右下あたりに置く
+     ・バッテン（白い細線）：赤い丸の中心から4方向へのびる線。下の2本は範囲の下の両角へ、
+       上の2本は左右の端の同じ高さへ（右上は左下からの線をまっすぐのばした先。左上はその高さにそろえる）
+     ・縦の中央線も、赤い丸の中心を通す
      位置は、ガイド線の範囲に置いた「基準の箱」（幅：高さ ＝ POSE_ASPECT）に対する割合で決めている。 */
   var POSE_ASPECT = 0.66;            // 基準の箱の 幅÷高さ
-  var POSE_HANDS = [0.5455, 0.5997]; // 赤い丸の中心
+  var POSE_HANDS = [0.5595, 0.6120]; // 赤い丸の中心
+  var POSE_FIST = [0.5339, 0.5997];  // 人の形のこぶしの中心を置く位置
   var POSE_HANDS_R = 0.049;          // 赤い丸の半径（箱の幅に対する割合）
   var POSE_FIG_H = 0.483;            // 人の形の高さ（箱の高さに対する割合。頭の上が約33%、足の裏が約81%の位置になる）
   // 人の形の輪郭。こぶしの中心を原点にして、人の形の高さを1とした位置（右が＋、下が＋）
@@ -721,11 +731,20 @@
     [0.0839, -0.401], [0.0889, -0.4093], [0.0996, -0.4109], [0.1021, -0.4151], [0.1038, -0.4407], [0.1129, -0.449], [0.117, -0.4581], [0.1311, -0.4664],
     [0.1385, -0.4821], [0.1393, -0.5003], [0.1344, -0.5127], [0.1294, -0.5176], [0.1269, -0.53], [0.112, -0.5367], [0.1038, -0.5449], [0.1013, -0.5515]
   ];
-  function drawPose(svg, x0, y0, x1, yb) {
+  function poseLayout(x0, y0, x1, yb) {
     var W = x1 - x0, H = yb - y0;
     // 基準の箱を、範囲の上端・左右の中央に、はみ出さない最大の大きさで置く
     var bw = Math.min(W, H * POSE_ASPECT), bh = bw / POSE_ASPECT;
     var bx = x0 + (W - bw) / 2;
+    return {
+      bw: bw, bh: bh,
+      c: [bx + POSE_HANDS[0] * bw, y0 + POSE_HANDS[1] * bh],
+      fist: [bx + POSE_FIST[0] * bw, y0 + POSE_FIST[1] * bh],
+      r: POSE_HANDS_R * bw
+    };
+  }
+  function drawPose(svg, pose, x0, y0, x1, yb, line) {
+    var bh = pose.bh, c = pose.c, r = pose.r, fist = pose.fist;
     function f(n) { return Math.round(n * 10) / 10; }
     function add(tag, attrs, cls, name) {
       var shade = {}, k;
@@ -736,24 +755,26 @@
       attrs['data-p'] = name;
       svg.appendChild(svgEl(tag, attrs));
     }
-    var c = [bx + POSE_HANDS[0] * bw, y0 + POSE_HANDS[1] * bh], r = POSE_HANDS_R * bw;
 
-    // バッテン：下の両角から丸の中心を通り、反対側の端（または上端）まで
-    [[x0, yb, x1], [x1, yb, x0]].forEach(function (g, i) {
-      var dx = c[0] - g[0], dy = c[1] - g[1];
-      var t = Math.min((g[2] - g[0]) / dx, (y0 - g[1]) / dy);
-      add('line', { x1: f(g[0]), y1: f(g[1]), x2: f(g[0] + dx * t), y2: f(g[1] + dy * t) }, 'pose-x', 'x' + (i + 1));
-    });
+    // バッテン（ほかのガイド線と同じ白い細線）。丸の中心から4方向へ：
+    //  左下の角 → 丸の中心 → まっすぐのばして右の端（または上端）まで
+    //  右下の角 → 丸の中心 → 左の端の、右上と同じ高さの点まで（丸のところで少し折れる）
+    var dx = c[0] - x0, dy = c[1] - yb;
+    var t = Math.min((x1 - x0) / dx, (y0 - yb) / dy);
+    var ur = [x0 + dx * t, yb + dy * t];
+    line(f(x0), f(yb), f(ur[0]), f(ur[1]), 'x1', 'data-p');
+    line(f(x1), f(yb), f(c[0]), f(c[1]), 'x2a', 'data-p');
+    line(f(c[0]), f(c[1]), f(x0 + (x1 - ur[0])), f(ur[1]), 'x2b', 'data-p');
 
-    // 人の形：こぶしを丸の中心に合わせて置く
+    // 人の形
     var hp = POSE_FIG_H * bh, d = '', maxY = -Infinity, footL = Infinity, footR = -Infinity;
     POSE_FIG.forEach(function (p, i) {
-      var x = c[0] + p[0] * hp, y = c[1] + p[1] * hp;
+      var x = fist[0] + p[0] * hp, y = fist[1] + p[1] * hp;
       d += (i ? ' L' : 'M') + f(x) + ' ' + f(y);
       if (y > maxY) maxY = y;
     });
     POSE_FIG.forEach(function (p) {
-      var x = c[0] + p[0] * hp, y = c[1] + p[1] * hp;
+      var x = fist[0] + p[0] * hp, y = fist[1] + p[1] * hp;
       if (y > maxY - hp * 0.04) { footL = Math.min(footL, x); footR = Math.max(footR, x); }
     });
     add('path', { d: d + ' Z' }, 'pose-body', 'body');
