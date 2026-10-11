@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var APP_VERSION = '1.12.1';
+  var APP_VERSION = '1.13.0';
 
   var CLUBS = ['ドライバー', '3W', '5W', 'UT', '5I', '6I', '7I', '8I', '9I', 'PW', 'AW', 'SW', 'パター', 'その他'];
   var COLORS = [
@@ -704,11 +704,13 @@
      ・バッテン（白い細線）：赤い丸の中心から4方向へのびる線。下の2本は範囲の下の両角へ、
        上の2本は左右の端の同じ高さへ（右上は左下からの線をまっすぐのばした先。左上はその高さにそろえる）
      ・赤い丸は左右の中央に置く。縦の中央線（画面の中央）が丸の中心を通る
+     ・目標（グリーンと旗）：中央線の先に目標物があるイメージ。うすい緑のグリーン、白いポール、赤い旗
      位置は、ガイド線の範囲に置いた「基準の箱」（幅：高さ ＝ POSE_ASPECT）に対する割合で決めている。 */
   var POSE_ASPECT = 0.66;            // 基準の箱の 幅÷高さ
   var POSE_HANDS = [0.5, 0.6120];    // 赤い丸の中心（左右の中央）
   var POSE_FIST = [0.4744, 0.5997];  // 人の形のこぶしの中心を置く位置（丸の中心から左上へ少し離す）
   var POSE_HANDS_R = 0.049;          // 赤い丸の半径（箱の幅に対する割合）
+  var POSE_TARGET_Y = 0.522;         // 目標（グリーンの中心・ポールの根元）の高さ
   var POSE_FIG_H = 0.483;            // 人の形の高さ（箱の高さに対する割合。頭の上が約33%、足の裏が約81%の位置になる）
   // 人の形の輪郭。こぶしの中心を原点にして、人の形の高さを1とした位置（右が＋、下が＋）
   var POSE_FIG = [
@@ -762,6 +764,17 @@
     line(f(x0), f(yb), f(ur[0]), f(ur[1]), 'x1', 'data-p');
     line(f(x1), f(yb), f(c[0]), f(c[1]), 'x2a', 'data-p');
     line(f(c[0]), f(c[1]), f(x0 + (x1 - ur[0])), f(ur[1]), 'x2b', 'data-p');
+
+    // 目標（グリーンと旗）。中央線の上、人の形より後ろ（先に描く）に置く
+    var k = pose.bw / 430, tx = c[0], ty = y0 + POSE_TARGET_Y * bh;
+    var tg = svgEl('g', { 'data-t': 'target', transform: 'translate(' + f(tx) + ' ' + f(ty) + ') scale(' + (Math.round(k * 1000) / 1000) + ')' });
+    tg.appendChild(svgEl('ellipse', { cx: 0, cy: 0, rx: 93, ry: 16.5, 'class': 'pose-shade' }));
+    tg.appendChild(svgEl('ellipse', { cx: 0, cy: 0, rx: 93, ry: 16.5, 'class': 'pose-green' }));
+    tg.appendChild(svgEl('ellipse', { cx: 0, cy: 0, rx: 5, ry: 1.8, 'class': 'pose-cup' }));
+    tg.appendChild(svgEl('path', { d: 'M0 0V-62', 'class': 'pose-shade' }));
+    tg.appendChild(svgEl('path', { d: 'M0 0V-62', 'class': 'pose-pole' }));
+    tg.appendChild(svgEl('path', { d: 'M1 -62L27 -53L1 -44Z', 'class': 'pose-flag' }));
+    svg.appendChild(tg);
 
     // 人の形
     var hp = POSE_FIG_H * bh, d = '', maxY = -Infinity, footL = Infinity, footR = -Infinity;
