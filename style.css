@@ -576,6 +576,10 @@ svg { display: block; }
   font-weight: 700;
 }
 .save-btn.is-saved { background: var(--card-2); color: var(--text); }
+/* 右上：「ガイド線」ボタンの下に「保存」ボタン */
+.an-right { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; margin-left: 4px; }
+.an-right .save-btn { margin-left: 0; }
+.an-right .cam-guide-btn { height: 36px; border-radius: 18px; }
 
 .stage {
   position: relative;
@@ -634,14 +638,24 @@ svg { display: block; }
 /* 上の帯の「撮影」「録音」ボタン。2つとも同じ大きさにそろえる（大きさは下の --tb-* で決める） */
 .an-top { --tb-w: 90px; --tb-h: 44px; --tb-font: 15px; --tb-gap: 6px; }
 /* 幅の狭い画面と横画面では、収まるように少し小さくする */
+@media (max-width: 399px) {
+  .an-top .shoot-btn, .an-top .voice-btn { margin-right: 4px; }
+  .an-right { margin-left: 0; }
+  .an-right .cam-guide-btn { padding: 0 10px; font-size: 12px; }
+}
 @media (max-width: 379px) {
   .an-top { --tb-w: 78px; --tb-font: 14px; }
 }
 @media (max-width: 340px) {
-  .an-top { --tb-w: 64px; --tb-gap: 4px; }
+  .an-top { --tb-w: 60px; --tb-gap: 4px; }
+  .an-top .shoot-btn, .an-top .voice-btn { margin-right: 3px; }
+  .an-right .cam-guide-btn, .an-right .save-btn { padding: 0 8px; font-size: 12px; }
 }
 @media (orientation: landscape) and (max-height: 560px) {
   .an-top { --tb-w: 54px; --tb-font: 13px; --tb-gap: 4px; }
+  .an-top .shoot-btn, .an-top .voice-btn { margin-right: 3px; }
+  .an-right { margin-left: 0; }
+  .an-right .cam-guide-btn { padding: 0 9px; font-size: 12px; }
 }
 /* 次の動画を撮影するボタン（戻るボタンの隣。蛍光イエローの地に「撮影」の文字） */
 .shoot-btn {
@@ -923,7 +937,7 @@ svg { display: block; }
     text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
     pointer-events: none;   /* ボタン以外の部分は、下の動画をそのまま触れるようにする */
   }
-  .analyze .an-top > button { pointer-events: auto; }
+  .analyze .an-top > button, .analyze .an-top .an-right > button { pointer-events: auto; }
   .analyze .draw-hint { top: 62px; }
   .analyze .an-controls {
     position: absolute;

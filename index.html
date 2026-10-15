@@ -149,12 +149,16 @@
     <button class="voice-btn" id="an-voice" aria-label="声を録音して解説動画を作る" aria-pressed="false"><i class="dot" aria-hidden="true"></i><i class="stop" aria-hidden="true"></i><span id="an-voice-label">録音</span></button>
     <div class="an-title" id="an-title"></div>
     <button class="bar-btn star" id="an-fav" aria-label="お気に入り" aria-pressed="false"><svg viewBox="0 0 24 24"><path d="M12 3l2.8 5.700 6.300.9-4.550 4.450 1.050 6.250L12 17.350 6.400 20.300l1.050-6.250L2.900 9.600l6.300-.9z"/></svg></button>
-    <button class="save-btn" id="an-save">保存</button>
+    <div class="an-right">
+      <button class="cam-guide-btn" id="an-guide-btn" aria-pressed="false">ガイド線</button>
+      <button class="save-btn" id="an-save">保存</button>
+    </div>
   </header>
 
   <div class="stage" id="stage">
     <div class="frame" id="frame">
       <video id="video" playsinline webkit-playsinline muted preload="auto" disablepictureinpicture x-webkit-airplay="deny"></video>
+      <svg class="cam-guide" id="an-guide" aria-hidden="true"></svg>
       <svg id="overlay" aria-label="補助線"></svg>
     </div>
     <div class="draw-hint" id="draw-hint" hidden></div>

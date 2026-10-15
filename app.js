@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var APP_VERSION = '1.13.0';
+  var APP_VERSION = '1.14.0';
 
   var CLUBS = ['ドライバー', '3W', '5W', 'UT', '5I', '6I', '7I', '8I', '9I', 'PW', 'AW', 'SW', 'パター', 'その他'];
   var COLORS = [
@@ -674,10 +674,29 @@
       var side = document.querySelector('.cam-bottom').getBoundingClientRect();
       x1 = Math.min(x1, side.left - st.left);
     }
+    renderGuide(svg, st.width, st.height, x0, y0, x1, yb, !centered && captureDir === '後方');
+  }
+
+  // 分析画面のガイド線：カメラ画面と同じ線を、動画の上に重ねる（最初は出さず、右上の「ガイド線」で表示）
+  function drawAnalyzeGuide() {
+    var svg = $('an-guide');
+    svg.textContent = '';
+    $('an-guide-btn').setAttribute('aria-pressed', cur && cur.guide ? 'true' : 'false');
+    if (!cur || !cur.guide || !cur.fw || !cur.fh) return;
+    var w = cur.fw, h = cur.fh, yb = h;
+    var ov = overlayInsets();
+    // 縦画面：カメラ画面と同じく、下の操作パネルの上までを範囲にする
+    if (ov) yb = Math.min(h, stage.clientHeight - ov.bottom - parseFloat(frame.style.top || 0));
+    if (yb < 80 || w < 80) return;
+    renderGuide(svg, w, h, 0, 0, w, yb, !!ov && cur.meta.dir === '後方');
+  }
+
+  // ガイド線の描画（カメラ画面・分析画面で共通）。範囲 x0..x1 / y0..yb に線を引く。pose: 構えの目安も出すか
+  function renderGuide(svg, viewW, viewH, x0, y0, x1, yb, withPose) {
     if (yb - y0 < 80 || x1 - x0 < 80) return;
     var cx = (x0 + x1) / 2, hh = yb - y0;
     var yHead = y0 + hh * GUIDE_HEAD, yFeet = y0 + hh * GUIDE_FEET;
-    svg.setAttribute('viewBox', '0 0 ' + st.width + ' ' + st.height);
+    svg.setAttribute('viewBox', '0 0 ' + viewW + ' ' + viewH);
     function line(a, b, c, d, name, attr) {
       var o = { x1: a, y1: b, x2: c, y2: d };
       svg.appendChild(svgEl('line', { x1: a, y1: b, x2: c, y2: d, 'class': 'shade' }));
@@ -686,7 +705,7 @@
     }
     // 構えの目安（人の形・手元の丸・丸で交わるバッテン）は、後方からの撮影・縦画面のときだけ出す。
     // そのときは、角から角への対角線のかわりに丸で交わるバッテンを引く（丸は左右の中央＝縦の中央線の上にある）。
-    var pose = (!centered && captureDir === '後方') ? poseLayout(x0, y0, x1, yb) : null;
+    var pose = withPose ? poseLayout(x0, y0, x1, yb) : null;
     if (!pose) {
       line(x0, y0, x1, yb, 'diag1');
       line(x1, y0, x0, yb, 'diag2');
@@ -1238,7 +1257,8 @@
       ready: false,
       priming: false,
       fpPromise: null,
-      rateWarned: {}
+      rateWarned: {},
+      guide: false
     };
     cur.fpPromise = cur.saved ? Promise.resolve(meta.fp) : fingerprint(opts.blob, meta.fileName);
 
@@ -1320,6 +1340,8 @@
     $('draw-hint').hidden = true;
     stageMsg(null);
     overlay.textContent = '';
+    $('an-guide').textContent = '';
+    $('an-guide-btn').setAttribute('aria-pressed', 'false');
     if (navigate) {
       if (from === 'list') { show('list'); renderList(); }
       else show(from || 'home');
@@ -1788,6 +1810,7 @@
     cur.fh = h;
     overlay.setAttribute('viewBox', '0 0 ' + w + ' ' + h);
     renderShapes();
+    drawAnalyzeGuide();
   }
 
   // 縦画面では上の表示と下の操作パネルを動画に重ねている。その重なりの高さを返す（横画面では null）。
@@ -2917,6 +2940,11 @@
     $('an-back').addEventListener('click', requestBack);
     $('an-shoot').addEventListener('click', shootNext);
     $('an-voice').addEventListener('click', toggleVoice);
+    $('an-guide-btn').addEventListener('click', function () {
+      if (!cur) return;
+      cur.guide = !cur.guide;
+      drawAnalyzeGuide();
+    });
     $('voice-share').addEventListener('click', shareVoice);
     $('voice-keep').addEventListener('click', keepVoice);
     $('voice-close').addEventListener('click', closeVoiceSheet);
