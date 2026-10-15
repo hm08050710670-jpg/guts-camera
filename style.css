@@ -284,6 +284,11 @@ svg { display: block; }
 .cam-guide .pose-cup { fill: rgba(0, 0, 0, 0.55); }
 .cam-guide .pose-pole { fill: none; stroke: #fff; stroke-width: 2; stroke-linecap: round; }
 .cam-guide .pose-flag { fill: #FF3B30; stroke: rgba(0, 0, 0, 0.4); stroke-width: 1; stroke-linejoin: round; }
+.cam-guide .pose-camera { fill: rgba(255, 255, 255, 0.92); stroke: none; }
+.cam-guide .pose-camera-lens { fill: #0B0B0B; }
+.cam-guide .pose-dim { fill: rgba(0, 0, 0, 0.45); }
+.cam-guide .pose-banner { fill: rgba(255, 59, 48, 0.92); }
+.cam-guide text.pose-banner-text { fill: #fff; font-size: 14px; stroke: none; paint-order: normal; }
 .cam-guide text.pose-text-body { fill: #FFE600; }
 .cam-guide text.pose-text-hands { fill: #FF6A60; }
 .cam-guide text { fill: rgba(255, 255, 255, 0.9); font-size: 11px; font-weight: 700; paint-order: stroke; stroke: rgba(0, 0, 0, 0.55); stroke-width: 2.500px; }
