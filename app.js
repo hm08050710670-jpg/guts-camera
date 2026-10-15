@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var APP_VERSION = '1.15.2';
+  var APP_VERSION = '1.15.3';
 
   var CLUBS = ['ドライバー', '3W', '5W', 'UT', '5I', '6I', '7I', '8I', '9I', 'PW', 'AW', 'SW', 'パター', 'その他'];
   var COLORS = [
@@ -820,10 +820,6 @@
     // 強調：赤い丸を大きく点滅させ、外へ広がる波紋を2重に出す（録画を始めるまで）
     var PULSE = '1s';
     if (emphasize) {
-      // 丸の中を赤く光らせる（点滅）
-      var flash = svgEl('circle', { cx: f(c[0]), cy: f(c[1]), r: f(r), 'class': 'pose-flash', 'data-t': 'flash' });
-      flash.appendChild(svgEl('animate', { attributeName: 'fill-opacity', values: '0.55;0;0.55', dur: PULSE, repeatCount: 'indefinite' }));
-      svg.appendChild(flash);
       // 波紋（2つを半周期ずらして、途切れず広がるように）
       [0, 0.5].forEach(function (delay, i) {
         var rp = svgEl('circle', { cx: f(c[0]), cy: f(c[1]), r: f(r), 'class': 'pose-ripple', 'data-t': i ? 'ripple2' : 'ripple' });
@@ -846,7 +842,7 @@
     var tb = svgEl('text', { x: f((footL + footR) / 2), y: f(maxY + 16), 'text-anchor': 'middle', 'class': 'pose-text-body' });
     tb.textContent = 'この形に体を合わせる';
     var th = svgEl('text', { x: f(c[0] + r + 6), y: f(c[1] + 4), 'class': 'pose-text-hands' });
-    th.textContent = '手元';
+    th.textContent = '手元を合わせる';
     svg.appendChild(tb); svg.appendChild(th);
   }
 

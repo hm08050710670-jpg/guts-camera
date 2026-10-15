@@ -287,10 +287,9 @@ svg { display: block; }
 .cam-guide .pose-camera { fill: rgba(255, 255, 255, 0.92); stroke: none; }
 .cam-guide .pose-camera-lens { fill: #0B0B0B; }
 .cam-guide .pose-ripple { fill: none; stroke: #FF3B30; stroke-width: 3; }
-.cam-guide .pose-flash { fill: #FF3B30; stroke: none; }
 .cam-guide .pose-hands.is-pulse { filter: drop-shadow(0 0 6px rgba(255, 59, 48, 0.95)); }
 .cam-guide text.pose-text-body { fill: #FFE600; }
-.cam-guide text.pose-text-hands { fill: #FF6A60; }
+.cam-guide text.pose-text-hands { fill: #FF3B30; font-size: 15px; font-weight: 800; stroke: rgba(0, 0, 0, 0.7); stroke-width: 3px; }
 .cam-guide text { fill: rgba(255, 255, 255, 0.9); font-size: 11px; font-weight: 700; paint-order: stroke; stroke: rgba(0, 0, 0, 0.55); stroke-width: 2.500px; }
 .cam-timer {
   flex: none;
