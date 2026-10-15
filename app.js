@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var APP_VERSION = '1.15.0';
+  var APP_VERSION = '1.15.1';
 
   var CLUBS = ['ドライバー', '3W', '5W', 'UT', '5I', '6I', '7I', '8I', '9I', 'PW', 'AW', 'SW', 'パター', 'その他'];
   var COLORS = [
@@ -674,7 +674,7 @@
       var side = document.querySelector('.cam-bottom').getBoundingClientRect();
       x1 = Math.min(x1, side.left - st.left);
     }
-    // カメラ画面では、録画を始めるまで「手元を赤い丸に」の強調（周りを暗くする・案内の帯）を出す
+    // カメラ画面では、録画を始めるまで手元の赤い丸を点滅させて強調する
     renderGuide(svg, st.width, st.height, x0, y0, x1, yb, !centered && captureDir === '後方', !cam.recording);
   }
 
@@ -693,7 +693,7 @@
   }
 
   // ガイド線の描画（カメラ画面・分析画面で共通）。範囲 x0..x1 / y0..yb に線を引く。pose: 構えの目安も出すか
-  // emphasize: 手元の赤い丸を強調する（丸の周りだけ明るく残して暗くし、上に案内の帯を出す）
+  // emphasize: 手元の赤い丸を強調する（点滅させ、波紋を出す）
   function renderGuide(svg, viewW, viewH, x0, y0, x1, yb, withPose, emphasize) {
     if (yb - y0 < 80 || x1 - x0 < 80) return;
     var cx = (x0 + x1) / 2, hh = yb - y0;
@@ -817,30 +817,23 @@
     cam_.appendChild(svgEl('circle', { cx: 0, cy: 0.5, r: 3.4, 'class': 'pose-camera-lens' }));
     svg.appendChild(cam_);
 
-    // 強調：丸の周りだけ明るく残して暗くし、上に案内の帯を出す
+    // 強調：赤い丸を点滅させ、外へ広がる波紋を出す（録画を始めるまで）
     if (emphasize) {
-      var defs = svgEl('defs');
-      var grad = svgEl('radialGradient', { id: 'pose-spot-g', cx: f(c[0]), cy: f(c[1]), r: f(r * 4.2), gradientUnits: 'userSpaceOnUse' });
-      grad.appendChild(svgEl('stop', { offset: '0', 'stop-color': '#000' }));
-      grad.appendChild(svgEl('stop', { offset: '0.62', 'stop-color': '#000' }));
-      grad.appendChild(svgEl('stop', { offset: '1', 'stop-color': '#fff' }));
-      defs.appendChild(grad);
-      var mask = svgEl('mask', { id: 'pose-spot', maskUnits: 'userSpaceOnUse', x: 0, y: 0, width: '100%', height: '100%' });
-      mask.appendChild(svgEl('rect', { x: 0, y: 0, width: '100%', height: '100%', fill: 'url(#pose-spot-g)' }));
-      defs.appendChild(mask);
-      svg.appendChild(defs);
-      svg.appendChild(svgEl('rect', { x: 0, y: 0, width: '100%', height: '100%', 'class': 'pose-dim', mask: 'url(#pose-spot)', 'data-t': 'dim' }));
-      var bw = 250, bx0 = f((x0 + x1) / 2 - bw / 2), by0 = f(y0 + 76);
-      var bg = svgEl('g', { 'data-t': 'banner' });
-      bg.appendChild(svgEl('rect', { x: bx0, y: by0, width: bw, height: 32, rx: 16, 'class': 'pose-banner' }));
-      var bt = svgEl('text', { x: f((x0 + x1) / 2), y: by0 + 21, 'text-anchor': 'middle', 'class': 'pose-banner-text' });
-      bt.textContent = '手元を赤い丸に合わせてください';
-      bg.appendChild(bt);
-      svg.appendChild(bg);
+      var ripple = svgEl('circle', { cx: f(c[0]), cy: f(c[1]), r: f(r), 'class': 'pose-ripple', 'data-t': 'ripple' });
+      var ar = svgEl('animate', { attributeName: 'r', values: f(r) + ';' + f(r * 2.6), dur: '1.6s', repeatCount: 'indefinite' });
+      var ao = svgEl('animate', { attributeName: 'opacity', values: '0.9;0', dur: '1.6s', repeatCount: 'indefinite' });
+      ripple.appendChild(ar); ripple.appendChild(ao);
+      svg.appendChild(ripple);
     }
 
-    // 手元の丸（暗くする層より手前）
+    // 手元の丸
     add('circle', { cx: f(c[0]), cy: f(c[1]), r: f(r) }, 'pose-hands', 'hands');
+    if (emphasize) {
+      var hc = svg.lastChild;
+      hc.setAttribute('class', 'pose-hands is-pulse');
+      hc.appendChild(svgEl('animate', { attributeName: 'stroke-width', values: '2;5;2', dur: '1.6s', repeatCount: 'indefinite' }));
+      hc.appendChild(svgEl('animate', { attributeName: 'stroke-opacity', values: '1;0.45;1', dur: '1.6s', repeatCount: 'indefinite' }));
+    }
 
     var tb = svgEl('text', { x: f((footL + footR) / 2), y: f(maxY + 16), 'text-anchor': 'middle', 'class': 'pose-text-body' });
     tb.textContent = 'この形に体を合わせる';
@@ -947,7 +940,7 @@
 
   function setRecUI(on) {
     $('screen-camera').classList.toggle('is-rec', on);
-    drawGuide();   // 録画中は手元の強調（暗くする・案内の帯）を出さない
+    drawGuide();   // 録画中は手元の丸を点滅させない
     $('cam-timer').hidden = !on;
     $('cam-rec').setAttribute('aria-label', on ? '録画停止' : '録画開始');
     if (on) $('cam-time').textContent = '0:00';
