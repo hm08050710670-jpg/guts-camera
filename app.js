@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var APP_VERSION = '1.15.1';
+  var APP_VERSION = '1.15.2';
 
   var CLUBS = ['ドライバー', '3W', '5W', 'UT', '5I', '6I', '7I', '8I', '9I', 'PW', 'AW', 'SW', 'パター', 'その他'];
   var COLORS = [
@@ -693,7 +693,7 @@
   }
 
   // ガイド線の描画（カメラ画面・分析画面で共通）。範囲 x0..x1 / y0..yb に線を引く。pose: 構えの目安も出すか
-  // emphasize: 手元の赤い丸を強調する（点滅させ、波紋を出す）
+  // emphasize: 手元の赤い丸を強調する（大きく点滅させ、波紋を出す）
   function renderGuide(svg, viewW, viewH, x0, y0, x1, yb, withPose, emphasize) {
     if (yb - y0 < 80 || x1 - x0 < 80) return;
     var cx = (x0 + x1) / 2, hh = yb - y0;
@@ -817,13 +817,21 @@
     cam_.appendChild(svgEl('circle', { cx: 0, cy: 0.5, r: 3.4, 'class': 'pose-camera-lens' }));
     svg.appendChild(cam_);
 
-    // 強調：赤い丸を点滅させ、外へ広がる波紋を出す（録画を始めるまで）
+    // 強調：赤い丸を大きく点滅させ、外へ広がる波紋を2重に出す（録画を始めるまで）
+    var PULSE = '1s';
     if (emphasize) {
-      var ripple = svgEl('circle', { cx: f(c[0]), cy: f(c[1]), r: f(r), 'class': 'pose-ripple', 'data-t': 'ripple' });
-      var ar = svgEl('animate', { attributeName: 'r', values: f(r) + ';' + f(r * 2.6), dur: '1.6s', repeatCount: 'indefinite' });
-      var ao = svgEl('animate', { attributeName: 'opacity', values: '0.9;0', dur: '1.6s', repeatCount: 'indefinite' });
-      ripple.appendChild(ar); ripple.appendChild(ao);
-      svg.appendChild(ripple);
+      // 丸の中を赤く光らせる（点滅）
+      var flash = svgEl('circle', { cx: f(c[0]), cy: f(c[1]), r: f(r), 'class': 'pose-flash', 'data-t': 'flash' });
+      flash.appendChild(svgEl('animate', { attributeName: 'fill-opacity', values: '0.55;0;0.55', dur: PULSE, repeatCount: 'indefinite' }));
+      svg.appendChild(flash);
+      // 波紋（2つを半周期ずらして、途切れず広がるように）
+      [0, 0.5].forEach(function (delay, i) {
+        var rp = svgEl('circle', { cx: f(c[0]), cy: f(c[1]), r: f(r), 'class': 'pose-ripple', 'data-t': i ? 'ripple2' : 'ripple' });
+        rp.appendChild(svgEl('animate', { attributeName: 'r', values: f(r) + ';' + f(r * 3.6), dur: PULSE, begin: delay + 's', repeatCount: 'indefinite' }));
+        rp.appendChild(svgEl('animate', { attributeName: 'opacity', values: '1;0', dur: PULSE, begin: delay + 's', repeatCount: 'indefinite' }));
+        rp.appendChild(svgEl('animate', { attributeName: 'stroke-width', values: '5;1', dur: PULSE, begin: delay + 's', repeatCount: 'indefinite' }));
+        svg.appendChild(rp);
+      });
     }
 
     // 手元の丸
@@ -831,8 +839,8 @@
     if (emphasize) {
       var hc = svg.lastChild;
       hc.setAttribute('class', 'pose-hands is-pulse');
-      hc.appendChild(svgEl('animate', { attributeName: 'stroke-width', values: '2;5;2', dur: '1.6s', repeatCount: 'indefinite' }));
-      hc.appendChild(svgEl('animate', { attributeName: 'stroke-opacity', values: '1;0.45;1', dur: '1.6s', repeatCount: 'indefinite' }));
+      hc.appendChild(svgEl('animate', { attributeName: 'stroke-width', values: '3;8;3', dur: PULSE, repeatCount: 'indefinite' }));
+      hc.appendChild(svgEl('animate', { attributeName: 'r', values: f(r) + ';' + f(r * 1.18) + ';' + f(r), dur: PULSE, repeatCount: 'indefinite' }));
     }
 
     var tb = svgEl('text', { x: f((footL + footR) / 2), y: f(maxY + 16), 'text-anchor': 'middle', 'class': 'pose-text-body' });
