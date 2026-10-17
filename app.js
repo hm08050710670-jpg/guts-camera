@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var APP_VERSION = '1.15.3';
+  var APP_VERSION = '1.15.4';
 
   var CLUBS = ['ドライバー', '3W', '5W', 'UT', '5I', '6I', '7I', '8I', '9I', 'PW', 'AW', 'SW', 'パター', 'その他'];
   var COLORS = [
@@ -798,15 +798,9 @@
     svg.appendChild(tg);
 
     // 人の形
-    var hp = POSE_FIG_H * bh, d = '', maxY = -Infinity, footL = Infinity, footR = -Infinity;
+    var hp = POSE_FIG_H * bh, d = '';
     POSE_FIG.forEach(function (p, i) {
-      var x = fist[0] + p[0] * hp, y = fist[1] + p[1] * hp;
-      d += (i ? ' L' : 'M') + f(x) + ' ' + f(y);
-      if (y > maxY) maxY = y;
-    });
-    POSE_FIG.forEach(function (p) {
-      var x = fist[0] + p[0] * hp, y = fist[1] + p[1] * hp;
-      if (y > maxY - hp * 0.04) { footL = Math.min(footL, x); footR = Math.max(footR, x); }
+      d += (i ? ' L' : 'M') + f(fist[0] + p[0] * hp) + ' ' + f(fist[1] + p[1] * hp);
     });
     add('path', { d: d + ' Z' }, 'pose-body', 'body');
 
@@ -839,11 +833,12 @@
       hc.appendChild(svgEl('animate', { attributeName: 'r', values: f(r) + ';' + f(r * 1.18) + ';' + f(r), dur: PULSE, repeatCount: 'indefinite' }));
     }
 
-    var tb = svgEl('text', { x: f((footL + footR) / 2), y: f(maxY + 16), 'text-anchor': 'middle', 'class': 'pose-text-body' });
-    tb.textContent = 'この形に体を合わせる';
-    var th = svgEl('text', { x: f(c[0] + r + 6), y: f(c[1] + 4), 'class': 'pose-text-hands' });
-    th.textContent = '手元を合わせる';
-    svg.appendChild(tb); svg.appendChild(th);
+    // 「手元を合わせる」：丸の右。画面の幅が狭いときは、はみ出さない大きさまで小さくする
+    var label = '手元を合わせる', tx0 = c[0] + r + 8;
+    var fs = Math.max(13, Math.min(20, Math.floor((x1 - tx0 - 6) / label.length)));
+    var th = svgEl('text', { x: f(tx0), y: f(c[1] + fs * 0.36), 'class': 'pose-text-hands', style: 'font-size:' + fs + 'px' });
+    th.textContent = label;
+    svg.appendChild(th);
   }
 
   /* ---------- タップでピント合わせ ----------
