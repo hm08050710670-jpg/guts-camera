@@ -776,6 +776,12 @@ svg { display: block; }
   overflow: hidden;
 }
 .seek-fill { height: 100%; width: calc(100% * var(--r, 0)); background: var(--text); }
+/* 前後カットの編集中：使う範囲を黄色で示す（範囲の外はシークバーの灰色のまま） */
+.seek-trim { display: none; position: absolute; top: 50%; height: 8px; margin-top: -4px; left: calc(9px + (100% - 18px) * var(--ta, 0)); width: calc((100% - 18px) * (var(--tb, 1) - var(--ta, 0))); border-radius: 3px; background: rgba(223, 255, 0, 0.45); box-shadow: inset 2px 0 0 var(--accent), inset -2px 0 0 var(--accent); pointer-events: none; }
+.analyze.is-trim .seek-trim { display: block; }
+.analyze.is-trim .seek-fill { opacity: 0.5; }
+#tools-trim .trim-btn { color: var(--accent); }
+#tools-trim .trim-btn.is-set { background: var(--accent); color: #0B0B0B; }
 .seek-thumb {
   position: absolute;
   top: 50%;
@@ -951,6 +957,8 @@ svg { display: block; }
   }
   .analyze .an-top > button, .analyze .an-top .an-right > button { pointer-events: auto; }
   .analyze .draw-hint { top: 62px; }
+  /* 前後カットの編集中は、範囲の表示を操作パネルのすぐ上に出す */
+  .analyze.is-trim .draw-hint { top: auto; bottom: calc(var(--panel-h, 160px) + 10px); }
   .analyze .an-controls {
     position: absolute;
     left: 0;

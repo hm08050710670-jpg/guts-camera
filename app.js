@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var APP_VERSION = '1.16.0';
+  var APP_VERSION = '1.17.0';
 
   var CLUBS = ['ドライバー', '3W', '5W', 'UT', '5I', '6I', '7I', '8I', '9I', 'PW', 'AW', 'SW', 'パター', 'その他'];
   var COLORS = [
@@ -104,7 +104,7 @@
     var el = $('toast');
     el.textContent = msg;
     // カメラ画面では録画ボタンに重ならないよう、上側に表示する（解説動画の録音中も、操作パネルに重ならないよう上側）
-    el.classList.toggle('is-high', currentScreen === 'camera' || voice.recording);
+    el.classList.toggle('is-high', currentScreen === 'camera' || voice.recording || !!(cur && cur.trimEditing));
     el.hidden = false;
     clearTimeout(toastTimer);
     toastTimer = setTimeout(function () { el.hidden = true; }, ms || 2600);
@@ -364,6 +364,10 @@
       updateCamInfo();
       setupFocus(track);
       setupLens(track, token);
+      // 端末によっては映像の大きさが分かるのが遅れるため、少し待ってからもガイド線を引き直す
+      [300, 1000, 2500].forEach(function (ms) {
+        setTimeout(function () { if (token === cam.token && currentScreen === 'camera') drawGuide(); }, ms);
+      });
     }).catch(function (err) {
       if (token !== cam.token) return;
       if (useUltraDevice()) {
@@ -716,7 +720,8 @@
     line(lx, y0, lx, yb, 'center');
     line(x0, yHead, x1, yHead, 'head');
     line(x0, yFeet, x1, yFeet, 'feet');
-    if (pose) drawPose(svg, pose, x0, y0, x1, yb, line, emphasize);
+    // 構えの目安で何か問題が起きても、白いガイド線は残す
+    if (pose) { try { drawPose(svg, pose, x0, y0, x1, yb, line, emphasize); } catch (e) {} }
   }
 
   /* ---------- 構えの目安（後方から撮影するとき） ----------
@@ -1283,12 +1288,13 @@
       fpPromise: null,
       rateWarned: {},
       guide: false,
-      zoom: { s: 1, tx: 0, ty: 0 }
+      zoom: { s: 1, tx: 0, ty: 0 },
+      trimEditing: false
     };
     cur.fpPromise = cur.saved ? Promise.resolve(meta.fp) : fingerprint(opts.blob, meta.fileName);
 
     show('analyze');
-    screenAn.classList.remove('panels-hidden', 'is-playing', 'is-draw');
+    screenAn.classList.remove('panels-hidden', 'is-playing', 'is-draw', 'is-trim');
     showStyleRow(false);
     updateHeader();
     updateToolsUI();
@@ -1323,12 +1329,15 @@
         video.pause();
         cur.priming = false;
         try { video.currentTime = 0; } catch (e) {}
+        // 前後カットしてある動画は、使う範囲の最初から
+        if (hasTrim()) { try { video.currentTime = rangeLo(); } catch (e) {} }
         applyRate();
         // 声の入った動画（アプリで作った解説動画）は、音を出して再生する
         video.muted = !cur.meta.hasAudio;
         cur.ready = true;
         screenAn.classList.remove('is-playing');
-        updateTimeUI(0);
+        updateTrimUI();
+        updateTimeUI(rangeLo());
         stageMsg(null);
         probeFps(cur.url, token);
       });
@@ -1361,7 +1370,7 @@
     video.removeAttribute('src');
     try { video.load(); } catch (e) {}
     setTimeout(function () { URL.revokeObjectURL(url); }, 0);
-    screenAn.classList.remove('is-playing', 'is-draw', 'panels-hidden');
+    screenAn.classList.remove('is-playing', 'is-draw', 'panels-hidden', 'is-trim');
     $('draw-hint').hidden = true;
     stageMsg(null);
     overlay.textContent = '';
@@ -1853,15 +1862,27 @@
     var cr = $('an-controls').getBoundingClientRect();
     // パネルを隠しているときは、最後に測った高さを使う（表示切り替えで動画が動かないように）
     if (tr.height > 0) overlayTop = Math.max(0, tr.bottom - sr.top - 16);
-    if (cr.height > 0) overlayBottom = Math.max(0, sr.bottom - cr.top);
+    if (cr.height > 0) { overlayBottom = Math.max(0, sr.bottom - cr.top); screenAn.style.setProperty('--panel-h', Math.round(overlayBottom) + 'px'); }
     return { top: overlayTop, bottom: overlayBottom };
+  }
+
+  /* ---------- 前後カット（使う範囲）----------
+     動画ファイルは切らずに、使う範囲（開始 trimA・終了 trimB、秒）だけを記録する。
+     範囲を決めると、再生・コマ送り・シークバーはその範囲の中だけで動く。
+     カットの編集中（下の段が「ここから／ここまで」のとき）は、範囲を選び直せるよう全体を表示する。 */
+  var TRIM_MIN = 0.2;   // 範囲の最短（秒）
+  function hasTrim() { return !!(cur && cur.meta.trimA != null && cur.meta.trimB != null); }
+  function rangeLo() { return cur && !cur.trimEditing && hasTrim() ? cur.meta.trimA : 0; }
+  function rangeHi() {
+    var d = cur ? cur.duration || 0 : 0;
+    return cur && !cur.trimEditing && hasTrim() ? Math.min(d || cur.meta.trimB, cur.meta.trimB) : d;
   }
 
   /* ---------- 再生・シーク ---------- */
   var seekWant = null;
   function seekTo(t) {
     if (!cur || !cur.ready) return;
-    t = clamp(t, 0, cur.duration || 0);
+    t = clamp(t, rangeLo(), rangeHi());
     // 前のシークが終わっていなければ、最後の指定だけを覚えておき、終わったときに移動する。
     // シーク完了の通知が来ない場合に備えて、一定時間たったら待たずに移動する。
     if (video.seeking && performance.now() - seekStartedAt < 600) {
@@ -1890,11 +1911,11 @@
   video.addEventListener('seeked', flushSeek);
 
   function updateTimeUI(t) {
-    var d = cur ? cur.duration : 0;
-    var r = d > 0 ? clamp(t / d, 0, 1) : 0;
+    var lo = rangeLo(), hi = rangeHi(), d = hi - lo;
+    var r = d > 0 ? clamp((t - lo) / d, 0, 1) : 0;
     $('seek').style.setProperty('--r', r.toFixed(5));
     $('seek').setAttribute('aria-valuenow', Math.round(r * 100));
-    $('time').textContent = fmtTime(t) + ' / ' + fmtTime(d);
+    $('time').textContent = fmtTime(Math.max(0, t - lo)) + ' / ' + fmtTime(d);
   }
 
   var rafId = 0;
@@ -1902,6 +1923,12 @@
   function tick() {
     rafId = 0;
     if (!cur || video.paused) return;
+    // 範囲の終わりまで来たら止める
+    if (hasTrim() && !cur.trimEditing && video.currentTime >= rangeHi() - 0.004) {
+      video.pause();
+      seekTo(rangeHi());
+      return;
+    }
     if (!seekDragging) updateTimeUI(video.currentTime);
     checkActualRate();
     rafId = requestAnimationFrame(tick);
@@ -1939,6 +1966,7 @@
   video.addEventListener('durationchange', function () {
     if (cur && isFinite(video.duration) && video.duration > 0) {
       cur.duration = video.duration;
+      updateTrimUI();
       updateTimeUI(video.currentTime);
     }
   });
@@ -1951,8 +1979,9 @@
     if (!video.paused) { video.pause(); return; }
     if (cur.mode === 'draw') setMode('play');
     seekWant = null;
-    if (cur.duration && video.currentTime >= cur.duration - 0.03) {
-      try { video.currentTime = 0; } catch (e) {}
+    var lo = rangeLo(), hi = rangeHi();
+    if ((hi && video.currentTime >= hi - 0.03) || video.currentTime < lo - 0.001) {
+      try { video.currentTime = lo; } catch (e) {}
     }
     applyRate();
     var p = video.play();
@@ -2016,7 +2045,7 @@
       if (dir > 0) t = Math.max(t, shownTime + 1.5 / f);
       else t = Math.min(t, shownTime - 0.5 / f);
     }
-    seekTo(clamp(t, 0, d));
+    seekTo(clamp(t, rangeLo(), Math.min(d, rangeHi())));
   }
   function bindHold(btn, dir) {
     var timer = 0, iv = 0;
@@ -2197,11 +2226,11 @@
       el.classList.add('is-drag');
       try { el.setPointerCapture(e.pointerId); } catch (err) {}
       if (!video.paused) video.pause();
-      seekTo(ratio(e) * cur.duration);
+      seekTo(rangeLo() + ratio(e) * (rangeHi() - rangeLo()));
     });
     el.addEventListener('pointermove', function (e) {
       if (!seekDragging || !cur) return;
-      seekTo(ratio(e) * cur.duration);
+      seekTo(rangeLo() + ratio(e) * (rangeHi() - rangeLo()));
     });
     function end() {
       seekDragging = false;
@@ -2330,6 +2359,13 @@
   function updateHint() {
     var el = $('draw-hint');
     var text = '';
+    if (cur && cur.trimEditing) {
+      var tr = trimRangeNow();
+      text = 'ここから ' + fmtTime(tr.a) + ' ／ ここまで ' + fmtTime(tr.b) + '（' + (tr.b - tr.a).toFixed(2) + '秒）';
+      el.textContent = text;
+      el.hidden = false;
+      return;
+    }
     if (cur && cur.mode === 'draw') {
       if (cur.tool === 'line') text = cur.pending && cur.pending.fixed1 ? '② シャフト上の2点目をタップ' : '① シャフト上の1点目をタップ';
       else if (cur.tool === 'sway') text = cur.swayCount === 0 ? '① 左足の外側をタップ' : '② 右足の外側をタップ';
@@ -2366,8 +2402,80 @@
   }
 
   function showStyleRow(on) {
+    if (cur && cur.trimEditing) endTrimEdit();
+    $('tools-trim').hidden = true;
     $('tools-style').hidden = !on;
     $('tools-main').hidden = on;
+  }
+
+  // 前後カットの段を開く／閉じる
+  function startTrimEdit() {
+    if (!cur || !cur.ready) return;
+    if (!video.paused) video.pause();
+    setMode('play');
+    cur.trimEditing = true;
+    $('tools-main').hidden = true;
+    $('tools-style').hidden = true;
+    $('tools-trim').hidden = false;
+    screenAn.classList.add('is-trim');
+    updateTrimUI();
+    updateTimeUI(seekWant != null ? seekWant : video.currentTime);
+  }
+  function endTrimEdit() {
+    if (!cur) return;
+    cur.trimEditing = false;
+    screenAn.classList.remove('is-trim');
+    $('tools-trim').hidden = true;
+    $('tools-main').hidden = false;
+    updateHint();
+    var t = seekWant != null ? seekWant : video.currentTime;
+    // 今の位置が範囲の外なら、範囲の最初へ
+    if (t < rangeLo() - 0.001 || t > rangeHi() + 0.001) seekTo(rangeLo());
+    else updateTimeUI(t);
+  }
+  function trimRangeNow() {
+    var d = cur.duration || 0;
+    return { a: cur.meta.trimA != null ? cur.meta.trimA : 0, b: cur.meta.trimB != null ? cur.meta.trimB : d };
+  }
+  function setTrim(which) {
+    if (!cur || !cur.ready) return;
+    if (!video.paused) video.pause();
+    var t = seekWant != null ? seekWant : video.currentTime;
+    var r = trimRangeNow(), d = cur.duration || 0;
+    if (which === 'a') {
+      if (t > r.b - TRIM_MIN) { toast('「ここまで」より前の位置で押してください'); return; }
+      r.a = Math.max(0, t);
+    } else {
+      if (t < r.a + TRIM_MIN) { toast('「ここから」より後の位置で押してください'); return; }
+      r.b = Math.min(d, t);
+    }
+    cur.meta.trimA = r.a;
+    cur.meta.trimB = r.b;
+    // 範囲の最初のコマを一覧のサムネイルにする
+    if (which === 'a') { var th = captureThumb(); if (th) cur.meta.thumb = th; }
+    if (cur.saved) saveItemMeta();
+    updateTrimUI();
+    toast(which === 'a' ? 'ここから使います' : 'ここまで使います', 1400);
+  }
+  function resetTrim() {
+    if (!cur) return;
+    if (!hasTrim()) { toast('カットしていません'); return; }
+    cur.meta.trimA = null;
+    cur.meta.trimB = null;
+    if (cur.saved) saveItemMeta();
+    updateTrimUI();
+    toast('全体に戻しました', 1400);
+  }
+  function updateTrimUI() {
+    if (!cur) return;
+    var d = cur.duration || 0, r = trimRangeNow();
+    var seek = $('seek');
+    seek.style.setProperty('--ta', d ? (r.a / d).toFixed(5) : 0);
+    seek.style.setProperty('--tb', d ? (r.b / d).toFixed(5) : 1);
+    $('trim-start').classList.toggle('is-set', cur.meta.trimA != null && cur.meta.trimA > 0.001);
+    $('trim-end').classList.toggle('is-set', cur.meta.trimB != null && cur.meta.trimB < d - 0.001);
+    $('tool-cut').classList.toggle('is-on', hasTrim());
+    updateHint();
   }
 
   function setMode(m) {
@@ -2746,6 +2854,8 @@
       fp: m.fp || '',
       thumb: m.thumb || null,
       hasAudio: !!m.hasAudio,
+      trimA: m.trimA != null ? m.trimA : null,
+      trimB: m.trimB != null ? m.trimB : null,
       createdAt: m.createdAt || Date.now(),
       updatedAt: Date.now()
     };
@@ -3017,6 +3127,9 @@
     });
     camVideo.addEventListener('loadedmetadata', drawGuide);
     camVideo.addEventListener('resize', drawGuide);
+    camVideo.addEventListener('playing', drawGuide);
+    // 画面の大きさが決まる前に描こうとして描けなかった場合に備えて、カメラ画面の大きさが変わったら引き直す
+    if (window.ResizeObserver) new ResizeObserver(function () { if (currentScreen === 'camera') drawGuide(); }).observe(document.querySelector('.cam-stage'));
     window.addEventListener('resize', function () { if (currentScreen === 'camera') drawGuide(); });
     $('cam-rec').addEventListener('click', function () { if (cam.recording) stopRec(); else startRec(); });
     $('cam-fps').addEventListener('click', function () {
@@ -3109,6 +3222,11 @@
     });
     $('tool-style').addEventListener('click', function () { if (cur) { updateToolsUI(); showStyleRow(true); } });
     $('style-back').addEventListener('click', function () { showStyleRow(false); });
+    $('tool-cut').addEventListener('click', startTrimEdit);
+    $('trim-back').addEventListener('click', endTrimEdit);
+    $('trim-start').addEventListener('click', function () { setTrim('a'); });
+    $('trim-end').addEventListener('click', function () { setTrim('b'); });
+    $('trim-reset').addEventListener('click', resetTrim);
     $('swatches').addEventListener('click', function (e) {
       var b = e.target.closest('button');
       if (b) applyStyle('color', b.getAttribute('data-color'));
