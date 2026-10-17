@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var APP_VERSION = '1.15.4';
+  var APP_VERSION = '1.16.0';
 
   var CLUBS = ['ドライバー', '3W', '5W', 'UT', '5I', '6I', '7I', '8I', '9I', 'PW', 'AW', 'SW', 'パター', 'その他'];
   var COLORS = [
@@ -1282,7 +1282,8 @@
       priming: false,
       fpPromise: null,
       rateWarned: {},
-      guide: false
+      guide: false,
+      zoom: { s: 1, tx: 0, ty: 0 }
     };
     cur.fpPromise = cur.saved ? Promise.resolve(meta.fp) : fingerprint(opts.blob, meta.fileName);
 
@@ -1364,6 +1365,10 @@
     $('draw-hint').hidden = true;
     stageMsg(null);
     overlay.textContent = '';
+    pinch = null;
+    touchPts = {};
+    frame.style.transform = '';
+    screenAn.classList.remove('is-zoomed');
     $('an-guide').textContent = '';
     $('an-guide-btn').setAttribute('aria-pressed', 'false');
     if (navigate) {
@@ -1826,6 +1831,8 @@
       // 間に収まるなら間の中央に、収まらないなら上に寄せて下のパネルに隠れる部分を減らす
       top = h <= free ? ov.top + (free - h) / 2 : Math.max(0, sh - ov.bottom - h);
     }
+    // 画面の大きさが変わったら拡大を元に戻す（位置がずれないように）
+    if (cur.fw !== w || cur.fh !== h) { cur.zoom = { s: 1, tx: 0, ty: 0 }; applyZoom(); }
     frame.style.width = w + 'px';
     frame.style.height = h + 'px';
     frame.style.left = Math.round((sw - w) / 2) + 'px';
@@ -2341,9 +2348,6 @@
       b.classList.toggle('is-on', draw && cur.tool === b.getAttribute('data-tool'));
     });
     var sel = findShape(cur.selected);
-    var ext = sel && sel.type === 'line' ? !!sel.extend : cur.extend;
-    $('tool-extend').setAttribute('aria-pressed', ext ? 'true' : 'false');
-    $('tool-extend').classList.toggle('is-dim', !!sel && sel.type !== 'line');
     $('tool-delete').classList.toggle('is-dim', !sel);
     $('tool-undo').classList.toggle('is-dim', cur.history.length === 0);
     $('tool-hide').setAttribute('aria-pressed', cur.hidden ? 'true' : 'false');
@@ -2418,6 +2422,88 @@
     return [y1, y2];
   }
 
+  /* ---------- 2本指で拡大（ピンチ） ----------
+     動画・補助線・ガイド線をまとめて拡大する（#frame に拡大・移動をかける）。
+     2本指を広げると拡大（最大5倍）、狭めると縮小（等倍まで）。2本指のまま動かすと拡大した位置を動かせる。
+     線の位置は動画に対する割合で持っているので、拡大しても線はずれない。 */
+  var ZOOM_MAX = 5;
+  var pinch = null, pinchEndedAt = 0;
+  function applyZoom() {
+    var z = cur ? cur.zoom : null;
+    if (!z || z.s <= 1.001) { frame.style.transform = ''; screenAn.classList.remove('is-zoomed'); return; }
+    frame.style.transform = 'translate(' + z.tx + 'px,' + z.ty + 'px) scale(' + z.s + ')';
+    screenAn.classList.add('is-zoomed');
+  }
+  function clampZoom(z) {
+    z.s = clamp(z.s, 1, ZOOM_MAX);
+    if (z.s <= 1.001) { z.s = 1; z.tx = 0; z.ty = 0; return z; }
+    // 拡大した動画が、元の表示範囲からはみ出したすき間を作らないようにする
+    z.tx = clamp(z.tx, cur.fw * (1 - z.s), 0);
+    z.ty = clamp(z.ty, cur.fh * (1 - z.s), 0);
+    return z;
+  }
+  // 画面に触れている指（pointerId → 位置）
+  var touchPts = {};
+  function pinchInfo() {
+    var ids = Object.keys(touchPts);
+    var a = touchPts[ids[0]], b = touchPts[ids[1]];
+    var sr = stage.getBoundingClientRect();
+    return {
+      d: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)),
+      // 拡大前の動画の左上を原点にした、2本指の中点
+      mx: (a.x + b.x) / 2 - sr.left - frame.offsetLeft,
+      my: (a.y + b.y) / 2 - sr.top - frame.offsetTop
+    };
+  }
+  // 1本目の指で線を引いたり動かしたりしている途中に2本目が触れたら、その操作は取り消す
+  function cancelDrag() {
+    if (!drag || !cur) { drag = null; return; }
+    var d = drag;
+    drag = null;
+    if (d.place === 'p1') cur.pending = null;
+    else if (d.place === 'p2') { if (cur.pending) cur.pending.p2 = null; }
+    else if (d.place === 'sway') { cur.shapes = JSON.parse(d.before); cur.selected = null; }
+    else if (d.moved) cur.shapes = JSON.parse(d.before);
+    updateToolsUI();
+    renderShapes();
+  }
+  // 指の動きは、線の操作より先に（キャプチャ段階で）受け取る。
+  // 触れた線が描き直されても指の動きを受け取り続けられるよう、動画の領域（stage）でつかまえておく。
+  stage.addEventListener('pointerdown', function (e) {
+    if (e.pointerType !== 'touch' || !cur || !cur.ready) return;
+    touchPts[e.pointerId] = { x: e.clientX, y: e.clientY };
+    try { stage.setPointerCapture(e.pointerId); } catch (err) {}
+    if (Object.keys(touchPts).length !== 2) return;
+    e.preventDefault();
+    e.stopPropagation();
+    cancelDrag();
+    var p = pinchInfo(), z = cur.zoom;
+    pinch = { d0: p.d, s0: z.s, lx: (p.mx - z.tx) / z.s, ly: (p.my - z.ty) / z.s };
+  }, true);
+  stage.addEventListener('pointermove', function (e) {
+    if (!touchPts[e.pointerId]) return;
+    touchPts[e.pointerId] = { x: e.clientX, y: e.clientY };
+    if (!pinch || !cur) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (Object.keys(touchPts).length < 2) return;
+    var p = pinchInfo();
+    var s = clamp(pinch.s0 * p.d / pinch.d0, 1, ZOOM_MAX);
+    // 指の間にある動画の点が、指の中点についてくるように動かす
+    cur.zoom = clampZoom({ s: s, tx: p.mx - pinch.lx * s, ty: p.my - pinch.ly * s });
+    applyZoom();
+  }, true);
+  function endTouch(e) {
+    if (!touchPts[e.pointerId]) return;
+    delete touchPts[e.pointerId];
+    if (pinch) {
+      e.stopPropagation();
+      if (Object.keys(touchPts).length < 2) { pinch = null; pinchEndedAt = performance.now(); }
+    }
+  }
+  stage.addEventListener('pointerup', endTouch, true);
+  stage.addEventListener('pointercancel', endTouch, true);
+
   function toNorm(e) {
     var r = frame.getBoundingClientRect();
     return {
@@ -2428,7 +2514,7 @@
 
   var drag = null;
   overlay.addEventListener('pointerdown', function (e) {
-    if (!cur || drag || e.button) return;
+    if (!cur || drag || pinch || e.button) return;
     if (cur.mode !== 'draw') {
       // 再生モード：引いてある線や枠に触れたら、描画モードに切り替えて、そのまま選んで動かせるようにする。
       // 何もないところのタップは、今までどおり操作パネルの表示切り替えになる。
@@ -2988,6 +3074,7 @@
     // 動画分析：動画タップで操作パネルの表示・非表示（再生モードのみ）
     stage.addEventListener('click', function (e) {
       if (!cur || !cur.ready || cur.mode !== 'play') return;
+      if (pinch || performance.now() - pinchEndedAt < 500) return;   // 2本指の拡大のあとのタップは無視する
       if (voice.recording) return;   // 録音中は、終了ボタンが隠れないようにパネルを出したままにする
       if (e.target.closest && e.target.closest('#stage-msg')) return;
       var hide = !screenAn.classList.contains('panels-hidden');
@@ -3029,21 +3116,6 @@
     $('widths').addEventListener('click', function (e) {
       var b = e.target.closest('button');
       if (b) applyStyle('width', Number(b.getAttribute('data-w')));
-    });
-    $('tool-extend').addEventListener('click', function () {
-      if (!cur) return;
-      var s = findShape(cur.selected);
-      if (s && s.type !== 'line') { toast('延長はシャフトラインで使えます'); return; }
-      if (s) {
-        pushHistory();
-        s.extend = !s.extend;
-        cur.extend = s.extend;
-        shapesChanged();
-      } else {
-        cur.extend = !cur.extend;
-        updateToolsUI();
-        toast(cur.extend ? '次に引くシャフトラインを画面の端まで延長します' : '次に引くシャフトラインは延長しません');
-      }
     });
     $('tool-delete').addEventListener('click', function () {
       if (!cur) return;

@@ -602,7 +602,7 @@ svg { display: block; }
   touch-action: none;
   cursor: pointer;
 }
-.frame { position: absolute; left: 0; top: 0; width: 0; height: 0; }
+.frame { position: absolute; left: 0; top: 0; width: 0; height: 0; transform-origin: 0 0; }
 .frame video {
   position: absolute;
   inset: 0;
