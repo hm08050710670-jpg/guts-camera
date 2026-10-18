@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var APP_VERSION = '1.18.0';
+  var APP_VERSION = '1.19.0';
 
   var CLUBS = ['ドライバー', '3W', '5W', 'UT', '5I', '6I', '7I', '8I', '9I', 'PW', 'AW', 'SW', 'パター', 'その他'];
   var COLORS = [
@@ -696,7 +696,7 @@
 
   // ガイド線の描画（カメラ画面・分析画面で共通）。範囲 x0..x1 / y0..yb に線を引く。pose: 構えの目安も出すか
   // emphasize: 手元の赤い丸を強調する（大きく点滅させ、波紋を出す）
-  // onCamera: カメラ画面か（「カメラは腰の高さで撮影」の吹き出しはカメラ画面だけに出す）
+  // onCamera: カメラ画面か（②「構えた手の高さで撮影」の札はカメラ画面だけに出す）
   function renderGuide(svg, viewW, viewH, x0, y0, x1, yb, withPose, emphasize, onCamera) {
     if (yb - y0 < 80 || x1 - x0 < 80) return;
     var cx = (x0 + x1) / 2, hh = yb - y0;
@@ -815,21 +815,12 @@
     cam_.appendChild(svgEl('circle', { cx: 0, cy: 0.5, r: 3.4, 'class': 'pose-camera-lens' }));
     svg.appendChild(cam_);
 
-    // カメラの上の吹き出し「カメラは腰の高さで撮影」（カメラ画面だけ。録画を始めるまで枠が点滅する）
+    // ② カメラの上の黄色い札「構えた手の高さで撮影」（カメラ画面だけ。録画を始めるまで枠が点滅する）
     if (onCamera) {
-      var pw = 230, ph = 30, pb = yb - 46, px = c[0] - pw / 2, py = pb - ph;
-      var wp = svgEl('g', { 'data-t': 'waist' });
-      wp.appendChild(svgEl('path', { d: 'M' + f(c[0] - 7) + ' ' + f(pb - 1) + 'h14l-7 8z', 'class': 'pose-waist-tip' }));
-      wp.appendChild(svgEl('rect', { x: f(px), y: f(py), width: pw, height: ph, rx: 15, 'class': 'pose-waist' }));
-      var frameR = svgEl('rect', { x: f(px), y: f(py), width: pw, height: ph, rx: 15, 'class': 'pose-waist-frame' });
-      if (emphasize) {
-        frameR.appendChild(svgEl('animate', { attributeName: 'stroke-opacity', values: '1;0.1;1', dur: '1s', repeatCount: 'indefinite' }));
-        frameR.appendChild(svgEl('animate', { attributeName: 'stroke-width', values: '4;2;4', dur: '1s', repeatCount: 'indefinite' }));
-      }
-      wp.appendChild(frameR);
-      var wt = svgEl('text', { x: f(c[0]), y: f(py + 20.5), 'text-anchor': 'middle', 'class': 'pose-waist-text' });
-      wt.textContent = 'カメラは腰の高さで撮影';
-      wp.appendChild(wt);
+      var pw = 256, ph = 40, pb = yb - 46;
+      var wp = stepTag(c[0] - pw / 2, pb - ph, pw, ph, '2', '構えた手の高さで撮影', 'is-height', emphasize, 18);
+      wp.setAttribute('data-t', 'waist');
+      wp.insertBefore(svgEl('path', { d: 'M' + f(c[0] - 8) + ' ' + f(pb - 1) + 'h16l-8 9z', 'class': 'step-tip' }), wp.firstChild);
       svg.appendChild(wp);
     }
 
@@ -855,12 +846,36 @@
       hc.appendChild(svgEl('animate', { attributeName: 'r', values: f(r) + ';' + f(r * 1.18) + ';' + f(r), dur: PULSE, repeatCount: 'indefinite' }));
     }
 
-    // 「手元を合わせる」：丸の右。画面の幅が狭いときは、はみ出さない大きさまで小さくする
-    var label = '手元を合わせる', tx0 = c[0] + r + 8;
-    var fs = Math.max(13, Math.min(20, Math.floor((x1 - tx0 - 6) / label.length)));
-    var th = svgEl('text', { x: f(tx0), y: f(c[1] + fs * 0.36), 'class': 'pose-text-hands', style: 'font-size:' + fs + 'px' });
-    th.textContent = label;
-    svg.appendChild(th);
+    // ① 丸の右の赤い札「手元を合わせる」（録画を始めるまで枠が点滅する）。
+    // 画面の幅が狭いときは、はみ出さないように札ごと小さくする
+    var tw = 172, tht = 38, tx0 = c[0] + r + 8;
+    var k = Math.min(1, (x1 - tx0 - 4) / tw);
+    var tag = stepTag(0, 0, tw, tht, '1', '手元を合わせる', 'is-hands', emphasize, 17);
+    tag.setAttribute('data-t', 'hands-tag');
+    tag.setAttribute('transform', 'translate(' + f(tx0) + ' ' + f(c[1] - tht * k / 2) + ')' + (k < 1 ? ' scale(' + (Math.round(k * 1000) / 1000) + ')' : ''));
+    svg.appendChild(tag);
+  }
+
+  // ①②の札（角の丸い長方形＋番号の丸＋文字）。blink: 枠を点滅させる
+  function stepTag(x, y, w, h, num, text, cls, blink, fs) {
+    function f(n) { return Math.round(n * 10) / 10; }
+    var g = svgEl('g', { 'class': 'step-tag ' + cls });
+    g.appendChild(svgEl('rect', { x: f(x), y: f(y), width: w, height: h, rx: h / 2, 'class': 'step-bg' }));
+    var fr = svgEl('rect', { x: f(x), y: f(y), width: w, height: h, rx: h / 2, 'class': 'step-frame' });
+    if (blink) {
+      fr.appendChild(svgEl('animate', { attributeName: 'stroke-opacity', values: '1;0.1;1', dur: '1s', repeatCount: 'indefinite' }));
+      fr.appendChild(svgEl('animate', { attributeName: 'stroke-width', values: '4;2;4', dur: '1s', repeatCount: 'indefinite' }));
+    }
+    g.appendChild(fr);
+    var nr = 12, ncx = x + 8 + nr, cy = y + h / 2;
+    g.appendChild(svgEl('circle', { cx: f(ncx), cy: f(cy), r: nr, 'class': 'step-num' }));
+    var nt = svgEl('text', { x: f(ncx), y: f(cy + 5), 'text-anchor': 'middle', 'class': 'step-num-text' });
+    nt.textContent = num;
+    g.appendChild(nt);
+    var tt = svgEl('text', { x: f((ncx + nr + x + w) / 2), y: f(cy + fs * 0.36), 'text-anchor': 'middle', 'class': 'step-text', style: 'font-size:' + fs + 'px' });
+    tt.textContent = text;
+    g.appendChild(tt);
+    return g;
   }
 
   /* ---------- タップでピント合わせ ----------
