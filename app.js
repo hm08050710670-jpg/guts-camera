@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var APP_VERSION = '1.17.1';
+  var APP_VERSION = '1.18.0';
 
   var CLUBS = ['ドライバー', '3W', '5W', 'UT', '5I', '6I', '7I', '8I', '9I', 'PW', 'AW', 'SW', 'パター', 'その他'];
   var COLORS = [
@@ -677,7 +677,7 @@
       x1 = Math.min(x1, side.left - st.left);
     }
     // カメラ画面では、録画を始めるまで手元の赤い丸を点滅させて強調する
-    renderGuide(svg, st.width, st.height, x0, y0, x1, yb, !centered && captureDir === '後方', !cam.recording);
+    renderGuide(svg, st.width, st.height, x0, y0, x1, yb, !centered && captureDir === '後方', !cam.recording, true);
   }
 
   // 分析画面のガイド線：カメラ画面と同じ線を、動画の上に重ねる（最初は出さず、右上の「ガイド線」で表示）
@@ -696,7 +696,8 @@
 
   // ガイド線の描画（カメラ画面・分析画面で共通）。範囲 x0..x1 / y0..yb に線を引く。pose: 構えの目安も出すか
   // emphasize: 手元の赤い丸を強調する（大きく点滅させ、波紋を出す）
-  function renderGuide(svg, viewW, viewH, x0, y0, x1, yb, withPose, emphasize) {
+  // onCamera: カメラ画面か（「カメラは腰の高さで撮影」の吹き出しはカメラ画面だけに出す）
+  function renderGuide(svg, viewW, viewH, x0, y0, x1, yb, withPose, emphasize, onCamera) {
     if (yb - y0 < 80 || x1 - x0 < 80) return;
     var cx = (x0 + x1) / 2, hh = yb - y0;
     var yHead = y0 + hh * GUIDE_HEAD, yFeet = y0 + hh * GUIDE_FEET;
@@ -719,7 +720,7 @@
     line(x0, yHead, x1, yHead, 'head');
     line(x0, yFeet, x1, yFeet, 'feet');
     // 構えの目安で何か問題が起きても、白いガイド線は残す
-    if (pose) { try { drawPose(svg, pose, x0, y0, x1, yb, line, emphasize); } catch (e) {} }
+    if (pose) { try { drawPose(svg, pose, x0, y0, x1, yb, line, emphasize, onCamera); } catch (e) {} }
   }
 
   /* ---------- 構えの目安（後方から撮影するとき） ----------
@@ -766,7 +767,7 @@
       r: POSE_HANDS_R * bw
     };
   }
-  function drawPose(svg, pose, x0, y0, x1, yb, line, emphasize) {
+  function drawPose(svg, pose, x0, y0, x1, yb, line, emphasize, onCamera) {
     var bh = pose.bh, c = pose.c, r = pose.r, fist = pose.fist;
     function f(n) { return Math.round(n * 10) / 10; }
     function add(tag, attrs, cls, name) {
@@ -813,6 +814,24 @@
     cam_.appendChild(svgEl('path', { d: 'M-11 -6h5l2.5 -3h7l2.5 3h5v12h-22z', 'class': 'pose-camera' }));
     cam_.appendChild(svgEl('circle', { cx: 0, cy: 0.5, r: 3.4, 'class': 'pose-camera-lens' }));
     svg.appendChild(cam_);
+
+    // カメラの上の吹き出し「カメラは腰の高さで撮影」（カメラ画面だけ。録画を始めるまで枠が点滅する）
+    if (onCamera) {
+      var pw = 230, ph = 30, pb = yb - 46, px = c[0] - pw / 2, py = pb - ph;
+      var wp = svgEl('g', { 'data-t': 'waist' });
+      wp.appendChild(svgEl('path', { d: 'M' + f(c[0] - 7) + ' ' + f(pb - 1) + 'h14l-7 8z', 'class': 'pose-waist-tip' }));
+      wp.appendChild(svgEl('rect', { x: f(px), y: f(py), width: pw, height: ph, rx: 15, 'class': 'pose-waist' }));
+      var frameR = svgEl('rect', { x: f(px), y: f(py), width: pw, height: ph, rx: 15, 'class': 'pose-waist-frame' });
+      if (emphasize) {
+        frameR.appendChild(svgEl('animate', { attributeName: 'stroke-opacity', values: '1;0.1;1', dur: '1s', repeatCount: 'indefinite' }));
+        frameR.appendChild(svgEl('animate', { attributeName: 'stroke-width', values: '4;2;4', dur: '1s', repeatCount: 'indefinite' }));
+      }
+      wp.appendChild(frameR);
+      var wt = svgEl('text', { x: f(c[0]), y: f(py + 20.5), 'text-anchor': 'middle', 'class': 'pose-waist-text' });
+      wt.textContent = 'カメラは腰の高さで撮影';
+      wp.appendChild(wt);
+      svg.appendChild(wp);
+    }
 
     // 強調：赤い丸を大きく点滅させ、外へ広がる波紋を2重に出す（録画を始めるまで）
     var PULSE = '1s';
