@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var APP_VERSION = '1.17.0';
+  var APP_VERSION = '1.17.1';
 
   var CLUBS = ['ドライバー', '3W', '5W', 'UT', '5I', '6I', '7I', '8I', '9I', 'PW', 'AW', 'SW', 'パター', 'その他'];
   var COLORS = [
@@ -231,7 +231,7 @@
     ultraId: null,         // 超広角カメラのID（見つかった場合）
     wideMax: 1,            // 標準カメラで拡大できる上限（倍率）
     ctl: null,             // いまのカメラでのズームの扱い方
-    guide: loadGuide(),    // ガイド線を表示するか
+    guide: true,           // ガイド線を表示するか（カメラを開くたびに必ず表示から始める）
     diag: {}
   };
   var MAX_ZOOM = 1;   // 拡大（1倍より大きい倍率）は使わない。広角（.5）〜標準（1×）の範囲だけにする
@@ -271,6 +271,7 @@
       ]).then(function (ok) { if (ok) useSystemCamera(); });
       return;
     }
+    cam.guide = true;   // ガイド線は、撮影を始めるときに必ず表示する（前回消していても）
     $('cam-dir').textContent = captureDir + 'から撮影';
     $('cam-quality').textContent = '';
     $('cam-fps').textContent = cam.fpsMode + 'fps';
@@ -646,9 +647,6 @@
      カメラ画面の下のボタンと、分析画面の操作パネルのうち、高いほうの上端を下限にする。 */
   var GUIDE_HEAD = 0.32, GUIDE_FEET = 0.88;   // 範囲の高さに対する「頭」「足元」の線の位置
   var ANALYZE_PANEL_H = 156;                 // 分析画面（縦）の操作パネルの高さ（下の余白を除く）
-  function loadGuide() {
-    try { return localStorage.getItem('guts-cam-guide') !== 'off'; } catch (e) { return true; }
-  }
   function effectiveSab() {
     var inl = document.documentElement.style.getPropertyValue('--sab');
     return inl ? (parseFloat(inl) || 0) : safeInsets().bottom;
@@ -810,7 +808,7 @@
     add('path', { d: d + ' Z' }, 'pose-body', 'body');
 
     // カメラの位置（中央線のいちばん下）。カメラ → 手元 → 旗 が一直線に並ぶ
-    var cam_ = svgEl('g', { 'data-t': 'camera', transform: 'translate(' + f(c[0]) + ' ' + f(yb - 14) + ')' });
+    var cam_ = svgEl('g', { 'data-t': 'camera', transform: 'translate(' + f(c[0]) + ' ' + f(yb - 22) + ') scale(1.8)' });
     cam_.appendChild(svgEl('path', { d: 'M-11 -6h5l2.5 -3h7l2.5 3h5v12h-22z', 'class': 'pose-shade' }));
     cam_.appendChild(svgEl('path', { d: 'M-11 -6h5l2.5 -3h7l2.5 3h5v12h-22z', 'class': 'pose-camera' }));
     cam_.appendChild(svgEl('circle', { cx: 0, cy: 0.5, r: 3.4, 'class': 'pose-camera-lens' }));
@@ -3121,8 +3119,7 @@
     // アプリ内カメラ
     $('cam-back').addEventListener('click', function () { closeCamera(); show('capture'); });
     $('cam-guide-btn').addEventListener('click', function () {
-      cam.guide = !cam.guide;
-      try { localStorage.setItem('guts-cam-guide', cam.guide ? 'on' : 'off'); } catch (e) {}
+      cam.guide = !cam.guide;   // 消しても、次にカメラを開いたときはまた表示する
       drawGuide();
     });
     camVideo.addEventListener('loadedmetadata', drawGuide);

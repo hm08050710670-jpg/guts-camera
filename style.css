@@ -286,6 +286,7 @@ svg { display: block; }
 .cam-guide .pose-flag { fill: #FF3B30; stroke: rgba(0, 0, 0, 0.4); stroke-width: 1; stroke-linejoin: round; }
 .cam-guide .pose-camera { fill: rgba(255, 255, 255, 0.92); stroke: none; }
 .cam-guide .pose-camera-lens { fill: #0B0B0B; }
+.cam-guide [data-t="camera"] .pose-shade { stroke-width: 2.500; }
 .cam-guide .pose-ripple { fill: none; stroke: #FF3B30; stroke-width: 3; }
 .cam-guide .pose-hands.is-pulse { filter: drop-shadow(0 0 6px rgba(255, 59, 48, 0.95)); }
 /* 「手元を合わせる」：はっきり読めるきれいな字（iPhoneの標準の日本語書体）。ふちどりは細くして字の形をくずさない */
