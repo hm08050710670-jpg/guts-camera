@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var APP_VERSION = '1.19.0';
+  var APP_VERSION = '1.19.2';
 
   var CLUBS = ['ドライバー', '3W', '5W', 'UT', '5I', '6I', '7I', '8I', '9I', 'PW', 'AW', 'SW', 'パター', 'その他'];
   var COLORS = [
@@ -1573,7 +1573,7 @@
     screenAn.classList.toggle('is-voice', on);
     b.setAttribute('aria-pressed', on ? 'true' : 'false');
     b.setAttribute('aria-label', on ? '録音を終了' : '声を録音して解説動画を作る');
-    $('an-voice-label').textContent = on ? '0:00' : '録音';
+    $('an-voice-label').textContent = on ? '0:00' : '画面録画';
   }
 
   function voiceLoop() {

@@ -663,11 +663,15 @@ svg { display: block; }
 }
 @media (max-width: 340px) {
   .an-top { --tb-w: 60px; --tb-gap: 4px; }
+  /* 幅が足りないので「画面録画」を「画面／録画」の2行にする */
+  .voice-btn:not([aria-pressed="true"]) span { width: 2em; font-size: 12px; line-height: 1.15; white-space: normal; text-align: center; }
   .an-top .shoot-btn, .an-top .voice-btn { margin-right: 3px; }
   .an-right .cam-guide-btn, .an-right .save-btn { padding: 0 8px; font-size: 12px; }
 }
 @media (orientation: landscape) and (max-height: 560px) {
   .an-top { --tb-w: 54px; --tb-font: 13px; --tb-gap: 4px; }
+  /* 幅が足りないので「画面録画」を「画面／録画」の2行にする */
+  .voice-btn:not([aria-pressed="true"]) span { width: 2em; font-size: 12px; line-height: 1.15; white-space: normal; text-align: center; }
   .an-top .shoot-btn, .an-top .voice-btn { margin-right: 3px; }
   .an-right { margin-left: 0; }
   .an-right .cam-guide-btn { padding: 0 9px; font-size: 12px; }
@@ -785,6 +789,9 @@ svg { display: block; }
 .analyze.is-trim .seek-fill { opacity: 0.5; }
 #tools-trim .trim-btn { color: var(--accent); }
 #tools-trim .trim-btn.is-set { background: var(--accent); color: #0B0B0B; }
+/* 前後カットの「完了」は赤 */
+#tools-trim #trim-back { background: #FF3B30; color: #fff; }
+#tools-trim #trim-back:active { background: #D92D23; }
 .seek-thumb {
   position: absolute;
   top: 50%;
