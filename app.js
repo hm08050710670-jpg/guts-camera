@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var APP_VERSION = '1.19.2';
+  var APP_VERSION = '1.20.0';
 
   var CLUBS = ['ドライバー', '3W', '5W', 'UT', '5I', '6I', '7I', '8I', '9I', 'PW', 'AW', 'SW', 'パター', 'その他'];
   var COLORS = [
@@ -234,7 +234,7 @@
     guide: true,           // ガイド線を表示するか（カメラを開くたびに必ず表示から始める）
     diag: {}
   };
-  var MAX_ZOOM = 1;   // 拡大（1倍より大きい倍率）は使わない。広角（.5）〜標準（1×）の範囲だけにする
+  var MAX_ZOOM = 10;  // 拡大の上限（倍率）。実際の上限はカメラごとに違い、これより小さければカメラの上限まで
   var CAM_MAX_SEC = 60;
 
   // 前回選んだフレームレートを覚えておく（60fps非対応の端末で毎回試し直さないため）
@@ -248,7 +248,8 @@
   function loadCamZoom() {
     try {
       var v = parseFloat(localStorage.getItem('guts-cam-zoom'));
-      if (v >= 0.3 && v <= 10) return v;
+      // 拡大したまま次に開くと分かりにくいので、開くときは広角（.5）か標準（1）から始める
+      if (v >= 0.3 && v <= 10) return v < 0.95 ? v : 1;
       if (localStorage.getItem('guts-cam-lens') === 'ultra') return 0.5;   // 以前の版の設定
     } catch (e) {}
     return 1;
@@ -473,7 +474,8 @@
     c.presets = [];
     if (c.min <= 0.6) c.presets.push(Math.round(c.min * 100) / 100);
     c.presets.push(1);
-    if (c.max >= 2) c.presets.push(2);
+    // 「Max」：そのカメラで一番大きい倍率（1.5倍以上まで拡大できるときだけ出す）
+    if (c.max >= 1.5) { c.presets.push(Math.round(c.max * 100) / 100); c.maxPreset = true; }
     cam.ctl = c;
     cam.zoom = clamp(cam.zoom, c.min, c.max);
     if (c.mode === 'device') {
@@ -567,7 +569,9 @@
     cam.ctl.presets.forEach(function (p) {
       var b = document.createElement('button');
       b.setAttribute('data-zoom', String(p));
-      b.setAttribute('aria-label', p < 1 ? '広角' : (p === 1 ? '標準' : p + '倍'));
+      var isMax = cam.ctl.maxPreset && p === cam.ctl.presets[cam.ctl.presets.length - 1];
+      if (isMax) b.setAttribute('data-max', '1');
+      b.setAttribute('aria-label', p < 1 ? '広角' : (p === 1 ? '標準' : '最大（' + fmtZoom(p) + '倍）'));
       box.appendChild(b);
     });
   }
@@ -584,7 +588,7 @@
       var p = parseFloat(b.getAttribute('data-zoom'));
       var on = p === active;
       b.classList.toggle('is-on', on);
-      b.textContent = on ? fmtZoom(cam.zoom) + '×' : shortZoom(p);
+      b.textContent = on ? fmtZoom(cam.zoom) + '×' : (b.getAttribute('data-max') ? 'Max' : shortZoom(p));
     });
   }
 
@@ -2921,8 +2925,31 @@
     return Number(p[1]) + '/' + Number(p[2]) + ' ' + (club || '') + ' ' + (dir || '');
   }
 
+  // アプリ内カメラで撮った動画は「写真」アプリに入っていないので、アプリに保存するときに
+  // iPhoneの共有画面を出して「ビデオを保存」で写真アプリにも保存できるようにする。
+  // 共有画面は、ボタンを押した直後にしか出せないため、保存の処理より先に呼ぶ。
+  function shareToPhotos(blob) {
+    var d = new Date();
+    var name = 'guts-camera-' + todayStr(d).replace(/-/g, '') + '-' + pad2(d.getHours()) + pad2(d.getMinutes()) + pad2(d.getSeconds()) +
+      (/webm/.test(blob.type) ? '.webm' : '.mp4');
+    var file = null;
+    try { file = new File([blob], name, { type: (blob.type || 'video/mp4').split(';')[0] }); } catch (e) {}
+    var ok = false;
+    try { ok = !!(file && navigator.share && navigator.canShare && navigator.canShare({ files: [file] })); } catch (e2) {}
+    // 結果は「保存しました」の案内に添えて出す（先に出すと保存の案内で上書きされるため）
+    if (!ok) return Promise.resolve('この端末では写真アプリへの保存画面を出せませんでした');
+    var p;
+    try { p = navigator.share({ files: [file] }); } catch (e3) { p = Promise.reject(e3); }
+    return Promise.resolve(p).then(function () { return ''; }, function (err) {
+      if (err && err.name === 'AbortError') return '';   // 共有画面を閉じただけ
+      return '写真アプリへの保存画面を出せませんでした';
+    });
+  }
+  function isCameraRecording(m) { return !!(m && m.fileName && /^camera-/.test(m.fileName)); }
+
   function submitSave() {
     if (!cur) return;
+    var shareNote = (!cur.saved && cur.kind === 'my' && isCameraRecording(cur.meta)) ? shareToPhotos(cur.blob) : Promise.resolve('');
     var model = cur.kind === 'model';
     var m = cur.meta;
     var date = model ? (m.date || todayStr()) : ($('s-date').value || todayStr());
@@ -3004,7 +3031,8 @@
         cur.saved = true;
         $('save-sheet').hidden = true;
         updateHeader();
-        toast(model ? 'お手本動画を登録しました' : '保存しました');
+        var done = model ? 'お手本動画を登録しました' : '保存しました';
+        shareNote.then(function (note) { toast(note ? done + '（' + note + '）' : done, note ? 4200 : undefined); });
         if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(function () {});
       });
     }).catch(function (err) {
