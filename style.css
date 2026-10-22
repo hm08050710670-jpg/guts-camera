@@ -277,7 +277,7 @@ svg { display: block; }
 .cam-guide .pose-shade { fill: none; stroke: rgba(0, 0, 0, 0.38); stroke-width: 5; stroke-linecap: round; stroke-linejoin: round; }
 .cam-guide .pose-body { fill: rgba(255, 255, 255, 0.14); stroke: #FFE600; stroke-width: 2; stroke-linejoin: round; }
 .cam-guide path.pose-shade { stroke-width: 4; }
-.cam-guide .pose-hands { fill: none; stroke: #FF3B30; stroke-width: 2; }
+.cam-guide .pose-hands { fill: none; stroke: #DFFF00; stroke-width: 2; }
 .cam-guide circle.pose-shade { stroke-width: 4; }
 .cam-guide [data-t="target"] .pose-shade { stroke-width: 4.500; }
 .cam-guide .pose-green { fill: rgba(70, 200, 95, 0.32); stroke: rgba(166, 240, 122, 0.95); stroke-width: 1.500; }
@@ -289,18 +289,19 @@ svg { display: block; }
 .cam-guide [data-t="camera"] .pose-shade { stroke-width: 2.500; }
 /* ①②の札：①手元を合わせる（赤）②構えた手の高さで撮影（黄色）。白い枠が点滅する */
 .cam-guide .step-frame { fill: none; stroke: #fff; stroke-width: 3; }
-.cam-guide .is-hands .step-bg { fill: #FF3B30; }
-.cam-guide .is-height .step-bg, .cam-guide .step-tip { fill: #DFFF00; }
-.cam-guide .is-hands .step-num { fill: #fff; }
-.cam-guide .is-height .step-num { fill: #0B0B0B; }
+/* ①手元＝蛍光イエロー、②カメラの高さ＝赤（v1.22.1で入れ替え） */
+.cam-guide .is-hands .step-bg { fill: #DFFF00; }
+.cam-guide .is-height .step-bg, .cam-guide .step-tip { fill: #FF3B30; }
+.cam-guide .is-hands .step-num { fill: #0B0B0B; }
+.cam-guide .is-height .step-num { fill: #fff; }
 .cam-guide text.step-num-text { font-size: 15px; font-weight: 900; stroke: none; paint-order: normal; font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", -apple-system, system-ui, sans-serif; }
-.cam-guide .is-hands text.step-num-text { fill: #FF3B30; }
-.cam-guide .is-height text.step-num-text { fill: #DFFF00; }
+.cam-guide .is-hands text.step-num-text { fill: #DFFF00; }
+.cam-guide .is-height text.step-num-text { fill: #FF3B30; }
 .cam-guide text.step-text { font-weight: 800; stroke: none; paint-order: normal; font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", -apple-system, system-ui, sans-serif; }
-.cam-guide .is-hands text.step-text { fill: #fff; }
-.cam-guide .is-height text.step-text { fill: #0B0B0B; }
-.cam-guide .pose-ripple { fill: none; stroke: #FF3B30; stroke-width: 3; }
-.cam-guide .pose-hands.is-pulse { filter: drop-shadow(0 0 6px rgba(255, 59, 48, 0.95)); }
+.cam-guide .is-hands text.step-text { fill: #0B0B0B; }
+.cam-guide .is-height text.step-text { fill: #fff; }
+.cam-guide .pose-ripple { fill: none; stroke: #DFFF00; stroke-width: 3; }
+.cam-guide .pose-hands.is-pulse { filter: drop-shadow(0 0 6px rgba(223, 255, 0, 0.95)); }
 .cam-guide text { fill: rgba(255, 255, 255, 0.9); font-size: 11px; font-weight: 700; paint-order: stroke; stroke: rgba(0, 0, 0, 0.55); stroke-width: 2.500px; }
 .cam-timer {
   flex: none;
