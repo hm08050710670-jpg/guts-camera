@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var APP_VERSION = '1.21.0';
+  var APP_VERSION = '1.22.0';
 
   var CLUBS = ['ドライバー', '3W', '5W', 'UT', '5I', '6I', '7I', '8I', '9I', 'PW', 'AW', 'SW', 'パター', 'その他'];
   var COLORS = [
@@ -235,7 +235,8 @@
     diag: {}
   };
   var MAX_ZOOM = 3;   // 拡大の上限（倍率）。Webアプリの拡大は画像の引き伸ばしで、倍率が高いと粗くなるため3倍まで（依頼主の指示）
-  var CAM_MAX_SEC = 60;
+  var CAM_MAX_SEC = 600;   // 1回の録画は最長10分（依頼主の指示。画質は短い録画と同じ）
+  var SELF_TIMER_SEC = 5;  // インカメでは、録画ボタンを押して5秒後に録画を始める（セルフタイマー）
 
   // 前回選んだフレームレートを覚えておく（60fps非対応の端末で毎回試し直さないため）
   function loadCamFps() {
@@ -277,6 +278,8 @@
     $('cam-quality').textContent = '';
     $('cam-fps').textContent = cam.fpsMode + 'fps';
     setRecUI(false);
+    cancelCountdown();
+    updateSelfTimerUI();
     show('camera');
     startStream();
     if (navigator.wakeLock && navigator.wakeLock.request) {
@@ -288,6 +291,7 @@
 
   function closeCamera() {
     cam.token++;
+    cancelCountdown();
     if (cam.recording) { cam.discard = true; stopRec(); }
     stopStream();
     if (cam.wake) { try { cam.wake.release(); } catch (e) {} cam.wake = null; }
@@ -672,7 +676,8 @@
     if (!centered) {
       // 縦画面：下のボタンが並ぶ部分の上までを範囲にする
       var lens = $('cam-lens'), rec = $('cam-rec').getBoundingClientRect();
-      var btnTop = (!lens.hidden ? lens.getBoundingClientRect().top : rec.top) - st.top - 8;
+      var stb = $('cam-selftimer');
+      var btnTop = (!lens.hidden ? lens.getBoundingClientRect().top : (!stb.hidden ? stb.getBoundingClientRect().top : rec.top)) - st.top - 8;
       var panelTop = st.height - (overlayBottom || (ANALYZE_PANEL_H + effectiveSab()));
       yb = Math.min(yb, btnTop, panelTop);
     } else {
@@ -1012,8 +1017,50 @@
     cam.timer = setInterval(function () {
       var sec = Math.floor((performance.now() - cam.t0) / 1000);
       $('cam-time').textContent = Math.floor(sec / 60) + ':' + pad2(sec % 60);
-      if (sec >= CAM_MAX_SEC) { stopRec(); toast('録画は' + CAM_MAX_SEC + '秒までです。自動で停止しました', 3600); }
+      if (sec >= CAM_MAX_SEC) { stopRec(); toast('録画は' + Math.round(CAM_MAX_SEC / 60) + '分までです。自動で停止しました', 3600); }
     }, 250);
+  }
+
+  /* ---------- セルフタイマー（インカメのとき） ----------
+     録画ボタンを押すと、画面の中央に 5・4・3・2・1 と大きく出してから録画を始める。
+     数えている間にもう一度録画ボタンを押すと取り消す。録画ボタンの上の「タイマー」で入り・切りできる。 */
+  function selfTimerOn() {
+    try { return localStorage.getItem('guts-self-timer') !== 'off'; } catch (e) { return true; }
+  }
+  function selfTimerActive() { return cam.facing === 'user' && selfTimerOn(); }
+  function updateSelfTimerUI() {
+    var b = $('cam-selftimer');
+    var was = b.hidden;
+    b.hidden = cam.facing !== 'user';
+    var on = selfTimerOn();
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    $('cam-selftimer-label').textContent = on ? 'タイマー ' + SELF_TIMER_SEC + '秒' : 'タイマー 切';
+    if (was !== b.hidden) drawGuide();   // ボタンの高さの分、ガイド線の範囲を引き直す
+  }
+  function startCountdown() {
+    if (!cam.stream || cam.recording || cam.count) return;
+    var n = SELF_TIMER_SEC;
+    var el = $('cam-count');
+    function showN() { $('cam-count-num').textContent = String(n); }
+    cam.count = { timer: 0 };
+    $('screen-camera').classList.add('is-count');
+    $('cam-rec').setAttribute('aria-label', 'セルフタイマーを取り消す');
+    el.hidden = false;
+    showN();
+    cam.count.timer = setInterval(function () {
+      n--;
+      if (n > 0) { showN(); return; }
+      cancelCountdown();
+      startRec();
+    }, 1000);
+  }
+  function cancelCountdown() {
+    if (!cam.count) return;
+    clearInterval(cam.count.timer);
+    cam.count = null;
+    $('cam-count').hidden = true;
+    $('screen-camera').classList.remove('is-count');
+    $('cam-rec').setAttribute('aria-label', '録画開始');
   }
 
   function stopRec() {
@@ -3215,20 +3262,31 @@
     // 画面の大きさが決まる前に描こうとして描けなかった場合に備えて、カメラ画面の大きさが変わったら引き直す
     if (window.ResizeObserver) new ResizeObserver(function () { if (currentScreen === 'camera') drawGuide(); }).observe(document.querySelector('.cam-stage'));
     window.addEventListener('resize', function () { if (currentScreen === 'camera') drawGuide(); });
-    $('cam-rec').addEventListener('click', function () { if (cam.recording) stopRec(); else startRec(); });
+    $('cam-rec').addEventListener('click', function () {
+      if (cam.recording) stopRec();
+      else if (cam.count) { cancelCountdown(); toast('セルフタイマーを取り消しました'); }
+      else if (selfTimerActive()) startCountdown();
+      else startRec();
+    });
+    $('cam-selftimer').addEventListener('click', function () {
+      if (cam.recording || cam.count) return;
+      try { localStorage.setItem('guts-self-timer', selfTimerOn() ? 'off' : 'on'); } catch (e) {}
+      updateSelfTimerUI();
+    });
     $('cam-fps').addEventListener('click', function () {
-      if (cam.recording) return;
+      if (cam.recording || cam.count) return;
       cam.fpsMode = cam.fpsMode === 60 ? 30 : 60;
       saveCamFps();
       this.textContent = cam.fpsMode + 'fps';
       startStream();
     });
     $('cam-flip').addEventListener('click', function () {
-      if (cam.recording) return;
+      if (cam.recording || cam.count) return;
       cam.facing = cam.facing === 'environment' ? 'user' : 'environment';
       cam.ctl = null;       // 前後を切り替えたら、ズームの扱い方を調べ直す
       cam.onUltra = false;
       updateLensUI();
+      updateSelfTimerUI();
       startStream();
     });
 

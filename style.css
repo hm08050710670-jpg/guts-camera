@@ -422,6 +422,47 @@ svg { display: block; }
 .cam-rec:disabled { opacity: 0.4; }
 .camera.is-rec .cam-rec i { width: 30px; height: 30px; border-radius: 7px; }
 .camera.is-rec .cam-side, .camera.is-rec #cam-back, .camera.is-rec .cam-lens { visibility: hidden; }
+/* セルフタイマー（インカメのとき）：録画ボタンの上の入り・切りボタン */
+.cam-selftimer {
+  grid-area: lens; justify-self: center;
+  display: flex; align-items: center; gap: 6px;
+  height: 36px; margin-bottom: 10px; padding: 0 14px; border-radius: 18px;
+  background: rgba(28, 28, 30, 0.86); color: var(--text);
+  font-size: 14px; font-weight: 700;
+}
+.cam-selftimer[hidden] { display: none; }
+.cam-selftimer[aria-pressed="true"] { color: var(--accent); }
+.cam-selftimer svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+/* 数えている間：真ん中に大きな数字。録画ボタンは「取り消し」（四角）にし、ほかのボタンは隠す */
+.cam-count {
+  position: absolute; inset: 0; z-index: 1;
+  /* 構えの目安（人の形・手元の丸）を隠さないよう、画面の上のほうに出す */
+  display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
+  padding-top: calc(var(--sat) + 56px);
+  pointer-events: none;
+}
+.cam-count[hidden] { display: none; }
+.cam-count b {
+  font-size: 120px; line-height: 1; font-weight: 900; color: var(--accent);
+  font-variant-numeric: tabular-nums;
+  -webkit-text-stroke: 3px #0B0B0B; text-shadow: 0 4px 24px rgba(0, 0, 0, 0.6);
+}
+.cam-count span {
+  margin-top: 4px; padding: 4px 12px; border-radius: 14px;
+  background: rgba(0, 0, 0, 0.6); font-size: 14px; font-weight: 700;
+}
+.camera.is-count .cam-rec i { width: 30px; height: 30px; border-radius: 7px; background: #fff; }
+.camera.is-count .cam-side, .camera.is-count #cam-back, .camera.is-count .cam-selftimer { visibility: hidden; }
+.camera.is-rec .cam-selftimer { visibility: hidden; }
+@media (orientation: landscape) and (max-height: 560px) {
+  /* 横画面：録画ボタンの左隣に置く（ズームの並びと同じ位置） */
+  .camera .cam-selftimer {
+    position: absolute; right: calc(100% - 4px); top: 50%; transform: translateY(-50%);
+    flex-direction: column; height: auto; margin: 0; padding: 8px 6px; gap: 2px; font-size: 11px; border-radius: 14px;
+  }
+  .cam-count { padding-top: calc(var(--sat) + 40px); }
+  .cam-count b { font-size: 110px; }
+}
 
 /* 横画面：プレビューを全面に表示し、上の表示と右の操作ボタンを重ねる */
 @media (orientation: landscape) and (max-height: 560px) {
