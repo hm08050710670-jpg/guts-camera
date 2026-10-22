@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var APP_VERSION = '1.22.1';
+  var APP_VERSION = '1.23.0';
 
   var CLUBS = ['ドライバー', '3W', '5W', 'UT', '5I', '6I', '7I', '8I', '9I', 'PW', 'AW', 'SW', 'パター', 'その他'];
   var COLORS = [
@@ -725,20 +725,25 @@
       line(x1, y0, x0, yb, 'diag2');
     }
     var lx = pose ? Math.round(pose.c[0] * 10) / 10 : cx;
-    line(lx, y0, lx, yb, 'center');
+    // 構えの目安を出すときの中央線は、カメラ〜旗の間を点線にするため、構えの目安の側で引く
+    if (!pose) line(lx, y0, lx, yb, 'center');
     line(x0, yHead, x1, yHead, 'head');
     line(x0, yFeet, x1, yFeet, 'feet');
     // 構えの目安で何か問題が起きても、白いガイド線は残す
-    if (pose) { try { drawPose(svg, pose, x0, y0, x1, yb, line, emphasize, onCamera); } catch (e) {} }
+    if (pose) {
+      try { drawPose(svg, pose, x0, y0, x1, yb, line, emphasize, onCamera); }
+      catch (e) { line(lx, y0, lx, yb, 'center'); }
+    }
   }
 
   /* ---------- 構えの目安（後方から撮影するとき） ----------
-     ・人の形（黄色いふち＋うすい塗り）：構えたときに体を合わせる目安。いただいたシルエット画像の輪郭をなぞったもの
+     ・人の形（グレーのふち＋うすい塗り）：構えたときに体を合わせる目安。いただいたシルエット画像の輪郭をなぞったもの
      ・手元の丸  ：手元（グリップの先とシャフトの境目）を合わせる目印。人の形のこぶしの右下あたりに置く
      ・バッテン（白い細線）：手元の丸の中心から4方向へのびる線。下の2本は範囲の下の両角へ、
        上の2本は左右の端の同じ高さへ（右上は左下からの線をまっすぐのばした先。左上はその高さにそろえる）
      ・手元の丸は左右の中央に置く。縦の中央線（画面の中央）が丸の中心を通る
-     ・目標（グリーンと旗）：中央線の先に目標物があるイメージ。うすい緑のグリーン、白いポール、赤い旗
+     ・目標（グリーンと旗）：中央線の先に目標物があるイメージ。うすい緑のグリーン、白いポール、赤い旗、旗の右に赤い札「目標」
+     ・目標へのライン：カメラ → 手元 → 目標を白い丸点の点線でつなぎ、矢印が目標へ向かって動く。カップに矢印の先を刺す
      位置は、ガイド線の範囲に置いた「基準の箱」（幅：高さ ＝ POSE_ASPECT）に対する割合で決めている。 */
   var POSE_ASPECT = 0.66;            // 基準の箱の 幅÷高さ
   var POSE_HANDS = [0.5, 0.6120];    // 手元の丸の中心（左右の中央）
@@ -810,6 +815,12 @@
     tg.appendChild(svgEl('path', { d: 'M1 -62L27 -53L1 -44Z', 'class': 'pose-flag' }));
     svg.appendChild(tg);
 
+    // 中央線：旗の先より上と、カメラのマークより下は今までどおりの細い白線。
+    // カメラ → 手元 → 目標（カップ）の間は、丸い点の点線でつなぐ（下の「目標へのライン」）
+    var flagTop = ty - 62 * k, camTop = yb - 22 - 9 * 1.8 - 4;
+    line(f(c[0]), f(y0), f(c[0]), f(flagTop), 'center');
+    line(f(c[0]), f(camTop), f(c[0]), f(yb), 'center2');
+
     // 人の形
     var hp = POSE_FIG_H * bh, d = '';
     POSE_FIG.forEach(function (p, i) {
@@ -823,6 +834,53 @@
     cam_.appendChild(svgEl('path', { d: 'M-11 -6h5l2.5 -3h7l2.5 3h5v12h-22z', 'class': 'pose-camera' }));
     cam_.appendChild(svgEl('circle', { cx: 0, cy: 0.5, r: 3.4, 'class': 'pose-camera-lens' }));
     svg.appendChild(cam_);
+
+    // 目標へのライン：カメラ → 手元、手元 → 目標 を白い丸点の点線でつなぎ、
+    // 目標のカップに矢印の先を刺す。録画を始めるまでは、矢印が目標に向かって動く（録画中・分析画面では止めて表示）
+    var segs = [[camTop, c[1] + r + 4], [c[1] - r - 4, ty + 12]];
+    segs.forEach(function (sg, i) {
+      var dd = 'M' + f(c[0]) + ' ' + f(sg[0]) + 'V' + f(sg[1]);
+      add('path', { d: dd }, 'pose-dots', i ? 'dots2' : 'dots1');
+      svg.lastChild.previousSibling.setAttribute('class', 'pose-dots-shade');
+    });
+    var tip = 'M' + f(c[0] - 6.5) + ' ' + f(ty + 12) + 'L' + f(c[0]) + ' ' + f(ty + 1) + 'L' + f(c[0] + 6.5) + ' ' + f(ty + 12) + 'Z';
+    add('path', { d: tip }, 'pose-arrow-tip', 'tip');
+    // 動く矢印の通り道。手元 → 目標は間が短いので、手元の丸の中から目標のカップへ流す
+    var runs = [segs[0], [c[1] + r * 0.3, ty + 10]];
+    runs.forEach(function (sg, i) {
+      var len = sg[0] - sg[1];
+      if (len < 10) return;
+      function chevron(name) {
+        var g = svgEl('g', { 'data-p': name });
+        g.appendChild(svgEl('path', { d: 'M-7 4L0 -3L7 4', 'class': 'pose-chev-shade' }));
+        g.appendChild(svgEl('path', { d: 'M-7 4L0 -3L7 4', 'class': 'pose-chev' }));
+        return g;
+      }
+      if (!emphasize) {
+        var g0 = chevron(i ? 'chev2' : 'chev1');
+        g0.setAttribute('transform', 'translate(' + f(c[0]) + ' ' + f((sg[0] + sg[1]) / 2) + ')');
+        svg.appendChild(g0);
+        return;
+      }
+      // 2つの矢印を半周期ずらして、下から上（目標の方向）へ流す
+      [0, 0.6].forEach(function (delay, j) {
+        var g = chevron((i ? 'chev2' : 'chev1') + (j ? 'b' : 'a'));
+        g.setAttribute('transform', 'translate(' + f(c[0]) + ' ' + f(sg[0]) + ')');
+        g.appendChild(svgEl('animateTransform', { attributeName: 'transform', type: 'translate', values: f(c[0]) + ' ' + f(sg[0] - 4) + ';' + f(c[0]) + ' ' + f(sg[1] + 6), dur: '1.2s', begin: delay + 's', repeatCount: 'indefinite' }));
+        g.appendChild(svgEl('animate', { attributeName: 'opacity', values: '0;1;1;0', keyTimes: '0;0.15;0.8;1', dur: '1.2s', begin: delay + 's', repeatCount: 'indefinite' }));
+        svg.appendChild(g);
+      });
+    });
+
+    // 目標の文字：旗の右に赤い札「目標」
+    var lw = 56, lh = 26, lxx = c[0] + 27 * k + 6, lyy = ty - 53 * k - lh / 2;
+    if (lxx + lw > x1 - 2) lxx = c[0] - lw - 6;   // 右にはみ出すときは旗の左に置く
+    var lg = svgEl('g', { 'data-t': 'target-label' });
+    lg.appendChild(svgEl('rect', { x: f(lxx), y: f(lyy), width: lw, height: lh, rx: lh / 2, 'class': 'target-label-bg' }));
+    var lt = svgEl('text', { x: f(lxx + lw / 2), y: f(lyy + lh / 2 + 5), 'text-anchor': 'middle', 'class': 'target-label-text' });
+    lt.textContent = '目標';
+    lg.appendChild(lt);
+    svg.appendChild(lg);
 
     // ② カメラの上の赤い札「構えた手の高さで撮影」（カメラ画面だけ。録画を始めるまで枠が点滅する）
     if (onCamera) {

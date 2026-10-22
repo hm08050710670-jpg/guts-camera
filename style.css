@@ -275,7 +275,15 @@ svg { display: block; }
 .cam-guide line.shade { stroke: rgba(0, 0, 0, 0.3); stroke-width: 2.500; }
 /* 構えの目安（後方から撮影するとき）：人の形（黄色いふち＋うすい塗り）・赤い手元の丸・目標（グリーンと旗）。バッテンはほかのガイド線と同じ白い細線 */
 .cam-guide .pose-shade { fill: none; stroke: rgba(0, 0, 0, 0.38); stroke-width: 5; stroke-linecap: round; stroke-linejoin: round; }
-.cam-guide .pose-body { fill: rgba(255, 255, 255, 0.14); stroke: #FFE600; stroke-width: 2; stroke-linejoin: round; }
+.cam-guide .pose-body { fill: rgba(255, 255, 255, 0.14); stroke: #7C7C7C; stroke-width: 2; stroke-linejoin: round; }
+/* 目標へのライン（カメラ → 手元 → 目標）：白い丸点の点線＋動く矢印＋カップに刺さる矢印の先 */
+.cam-guide .pose-dots-shade { fill: none; stroke: rgba(0, 0, 0, 0.45); stroke-width: 5.500; stroke-dasharray: 0.1 9; stroke-linecap: round; }
+.cam-guide .pose-dots { fill: none; stroke: #fff; stroke-width: 3.500; stroke-dasharray: 0.1 9; stroke-linecap: round; }
+.cam-guide .pose-chev-shade { fill: none; stroke: rgba(0, 0, 0, 0.45); stroke-width: 4.500; stroke-linecap: round; stroke-linejoin: round; }
+.cam-guide .pose-chev { fill: none; stroke: #fff; stroke-width: 2.500; stroke-linecap: round; stroke-linejoin: round; }
+.cam-guide .pose-arrow-tip { fill: #fff; stroke: none; }
+.cam-guide .target-label-bg { fill: #FF3B30; stroke: rgba(0, 0, 0, 0.35); stroke-width: 1; }
+.cam-guide text.target-label-text { fill: #fff; font-size: 14px; font-weight: 800; stroke: none; paint-order: normal; font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", -apple-system, system-ui, sans-serif; }
 .cam-guide path.pose-shade { stroke-width: 4; }
 .cam-guide .pose-hands { fill: none; stroke: #DFFF00; stroke-width: 2; }
 .cam-guide circle.pose-shade { stroke-width: 4; }
