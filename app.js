@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var APP_VERSION = '1.20.0';
+  var APP_VERSION = '1.21.0';
 
   var CLUBS = ['ドライバー', '3W', '5W', 'UT', '5I', '6I', '7I', '8I', '9I', 'PW', 'AW', 'SW', 'パター', 'その他'];
   var COLORS = [
@@ -234,7 +234,7 @@
     guide: true,           // ガイド線を表示するか（カメラを開くたびに必ず表示から始める）
     diag: {}
   };
-  var MAX_ZOOM = 10;  // 拡大の上限（倍率）。実際の上限はカメラごとに違い、これより小さければカメラの上限まで
+  var MAX_ZOOM = 3;   // 拡大の上限（倍率）。Webアプリの拡大は画像の引き伸ばしで、倍率が高いと粗くなるため3倍まで（依頼主の指示）
   var CAM_MAX_SEC = 60;
 
   // 前回選んだフレームレートを覚えておく（60fps非対応の端末で毎回試し直さないため）
@@ -1147,6 +1147,13 @@
     open.addEventListener('click', function () { openSaved(item.id, 'list'); });
     card.appendChild(open);
 
+    var alb = document.createElement('button');
+    alb.className = 'card-album';
+    alb.setAttribute('aria-label', 'iPhoneのアルバムに保存');
+    alb.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>';
+    alb.addEventListener('click', function () { albumFromList(item); });
+    card.appendChild(alb);
+
     var del = document.createElement('button');
     del.className = 'card-del';
     del.setAttribute('aria-label', '削除');
@@ -1169,6 +1176,47 @@
     });
     card.appendChild(del);
     return card;
+  }
+
+  /* ---------- iPhoneのアルバム（写真アプリ）への保存 ----------
+     Webアプリから写真アプリへ直接は保存できないため、iPhoneの共有画面を出して
+     「ビデオを保存」を選んでもらう。共有画面はボタンを押した直後にしか出せない。
+     アプリに保存した動画だけが対象（分析画面右上の「アルバム」と、一覧の保存マーク）。 */
+  function albumFile(blob, meta) {
+    var d = new Date(meta && meta.createdAt || Date.now());
+    var name = 'guts-camera-' + todayStr(d).replace(/-/g, '') + '-' + pad2(d.getHours()) + pad2(d.getMinutes()) + pad2(d.getSeconds()) +
+      (/webm/.test(blob.type) ? '.webm' : (/quicktime/.test(blob.type) ? '.mov' : '.mp4'));
+    var file = null;
+    try { file = new File([blob], name, { type: (blob.type || 'video/mp4').split(';')[0] }); } catch (e) {}
+    try { if (file && navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) return file; } catch (e2) {}
+    return null;
+  }
+  function saveToAlbum(blob, meta, retried) {
+    var file = albumFile(blob, meta);
+    if (!file) { toast('この端末では、アルバムへの保存画面を出せませんでした', 3600); return; }
+    var p;
+    try { p = navigator.share({ files: [file] }); } catch (e) { p = Promise.reject(e); }
+    Promise.resolve(p).catch(function (err) {
+      if (err && err.name === 'AbortError') return;   // 共有画面を閉じただけ
+      // 動画の読み込みに時間がかかり、ボタンを押した直後の扱いでなくなった場合は、もう一度押してもらう
+      if (!retried && err && err.name === 'NotAllowedError') {
+        ask('アルバムに保存', '準備ができました。「保存する」を押して、出てきた画面で「ビデオを保存」を選んでください。', [
+          { label: 'キャンセル', value: 0 },
+          { label: '保存する', value: 1, kind: 'primary' }
+        ]).then(function (ok) { if (ok) saveToAlbum(blob, meta, true); });
+        return;
+      }
+      toast('アルバムへの保存画面を出せませんでした', 3600);
+    });
+  }
+  function albumFromList(item) {
+    dbGet('videos', item.id).then(function (vid) {
+      if (!vid || !(vid.blob || vid.buf)) {
+        ask('動画データが見つかりません', 'iOSによってアプリ内のデータが削除された可能性があります。', [{ label: 'OK', value: 1, kind: 'primary' }]);
+        return;
+      }
+      saveToAlbum(new Blob([vid.blob || vid.buf], { type: vid.type || 'video/mp4' }), item);
+    }).catch(function () { toast('動画を読み込めませんでした'); });
   }
 
   function openSaved(id, from) {
@@ -1855,6 +1903,7 @@
     var sb = $('an-save');
     sb.textContent = cur.saved ? '編集' : (cur.kind === 'model' ? '登録' : '保存');
     sb.classList.toggle('is-saved', cur.saved);
+    $('an-album').hidden = !cur.saved;   // アルバムへの保存は、アプリに保存したあとだけ
   }
 
   /* ---------- 映像領域の計算 ----------
@@ -2925,31 +2974,8 @@
     return Number(p[1]) + '/' + Number(p[2]) + ' ' + (club || '') + ' ' + (dir || '');
   }
 
-  // アプリ内カメラで撮った動画は「写真」アプリに入っていないので、アプリに保存するときに
-  // iPhoneの共有画面を出して「ビデオを保存」で写真アプリにも保存できるようにする。
-  // 共有画面は、ボタンを押した直後にしか出せないため、保存の処理より先に呼ぶ。
-  function shareToPhotos(blob) {
-    var d = new Date();
-    var name = 'guts-camera-' + todayStr(d).replace(/-/g, '') + '-' + pad2(d.getHours()) + pad2(d.getMinutes()) + pad2(d.getSeconds()) +
-      (/webm/.test(blob.type) ? '.webm' : '.mp4');
-    var file = null;
-    try { file = new File([blob], name, { type: (blob.type || 'video/mp4').split(';')[0] }); } catch (e) {}
-    var ok = false;
-    try { ok = !!(file && navigator.share && navigator.canShare && navigator.canShare({ files: [file] })); } catch (e2) {}
-    // 結果は「保存しました」の案内に添えて出す（先に出すと保存の案内で上書きされるため）
-    if (!ok) return Promise.resolve('この端末では写真アプリへの保存画面を出せませんでした');
-    var p;
-    try { p = navigator.share({ files: [file] }); } catch (e3) { p = Promise.reject(e3); }
-    return Promise.resolve(p).then(function () { return ''; }, function (err) {
-      if (err && err.name === 'AbortError') return '';   // 共有画面を閉じただけ
-      return '写真アプリへの保存画面を出せませんでした';
-    });
-  }
-  function isCameraRecording(m) { return !!(m && m.fileName && /^camera-/.test(m.fileName)); }
-
   function submitSave() {
     if (!cur) return;
-    var shareNote = (!cur.saved && cur.kind === 'my' && isCameraRecording(cur.meta)) ? shareToPhotos(cur.blob) : Promise.resolve('');
     var model = cur.kind === 'model';
     var m = cur.meta;
     var date = model ? (m.date || todayStr()) : ($('s-date').value || todayStr());
@@ -3031,8 +3057,7 @@
         cur.saved = true;
         $('save-sheet').hidden = true;
         updateHeader();
-        var done = model ? 'お手本動画を登録しました' : '保存しました';
-        shareNote.then(function (note) { toast(note ? done + '（' + note + '）' : done, note ? 4200 : undefined); });
+        toast(model ? 'お手本動画を登録しました' : '保存しました');
         if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(function () {});
       });
     }).catch(function (err) {
@@ -3231,6 +3256,7 @@
     $('voice-keep').addEventListener('click', keepVoice);
     $('voice-close').addEventListener('click', closeVoiceSheet);
     $('an-save').addEventListener('click', openSaveSheet);
+    $('an-album').addEventListener('click', function () { if (cur && cur.saved) saveToAlbum(cur.blob, cur.meta); });
     $('an-fav').addEventListener('click', function () {
       if (!cur || !cur.ready) return;
       cur.meta.fav = !cur.meta.fav;

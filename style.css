@@ -532,7 +532,13 @@ svg { display: block; }
   line-height: 1;
   text-shadow: 0 0 4px rgba(0, 0, 0, 0.8);
 }
-.card-body { padding: 10px 44px 12px 12px; }
+.card-body { padding: 10px 84px 12px 12px; }
+/* 一覧：ごみ箱の左に、iPhoneのアルバムに保存 */
+.card-album {
+  position: absolute; right: 44px; bottom: 0; width: 36px; height: 52px;
+  display: grid; place-items: center; color: var(--text);
+}
+.card-album svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .card-title {
   font-size: 14px;
   font-weight: 700;
@@ -595,6 +601,21 @@ svg { display: block; }
 .an-right { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; margin-left: 4px; }
 .an-right .save-btn { margin-left: 0; }
 .an-right .cam-guide-btn { height: 36px; border-radius: 18px; }
+/* 「編集」の下：iPhoneのアルバムに保存（保存済みの動画だけ表示）。
+   上の帯の幅を変えないよう、「編集」の下に重ねて置く（右端そろえ） */
+.an-right { position: relative; }
+.album-btn {
+  position: absolute; top: calc(100% + 6px); right: 0; white-space: nowrap;
+  display: flex; align-items: center; gap: 4px;
+  height: 36px; padding: 0 12px; border-radius: 18px;
+  background: #fff; color: #0B0B0B; font-size: 14px; font-weight: 700;
+}
+.album-btn[hidden] { display: none; }
+/* 横画面：右側の操作パネルに重ならないよう、上の帯の下に「アルバム」の分だけ余白を足す */
+@media (orientation: landscape) and (max-height: 560px) {
+  .analyze .an-top:has(.album-btn:not([hidden])) { padding-bottom: 44px; }
+}
+.album-btn svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 
 .stage {
   position: relative;
