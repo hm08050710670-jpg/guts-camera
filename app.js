@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var APP_VERSION = '1.23.0';
+  var APP_VERSION = '1.23.1';
 
   var CLUBS = ['ドライバー', '3W', '5W', 'UT', '5I', '6I', '7I', '8I', '9I', 'PW', 'AW', 'SW', 'パター', 'その他'];
   var COLORS = [
@@ -424,8 +424,25 @@
     return p < 1 ? '.' + Math.round(p * 10) : fmtZoom(p);
   }
 
+  // インカメ：いちばん広く写る倍率で始める（ズームの指定に対応している端末だけ。ボタンは出さない）
+  function widestFront(track) {
+    var caps = {}, st = {};
+    try {
+      caps = track.getCapabilities ? track.getCapabilities() : {};
+      st = track.getSettings ? track.getSettings() : {};
+    } catch (e) {}
+    var z = caps.zoom;
+    cam.diag = { label: track.label || '', zoom: z && typeof st.zoom === 'number' ? [z.min, z.max, st.zoom] : null, devices: cam.diag.devices };
+    if (!z || typeof z.min !== 'number' || typeof st.zoom !== 'number' || st.zoom - z.min < 0.01) return;
+    try {
+      var p = track.applyConstraints({ advanced: [{ zoom: z.min }] });
+      if (p && p.then) p.then(function () { updateCamInfo(); if (cam.diag.zoom) cam.diag.zoom[2] = z.min; }, function () {});
+    } catch (e2) {}
+  }
+
   function setupLens(track, token) {
     cam.ctl = null;
+    if (track && cam.facing === 'user') { widestFront(track); updateLensUI(); return; }
     if (!track || cam.facing !== 'environment') { updateLensUI(); return; }
     var caps = {}, st = {};
     try {
